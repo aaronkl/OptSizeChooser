@@ -4,7 +4,7 @@ Created on Oct 24, 2013
 @author: Simon Bartels
 '''
 
-class Model(object):
+class Model():
     '''
     classdocs
     '''

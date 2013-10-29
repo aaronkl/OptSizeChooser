@@ -1,10 +1,12 @@
 '''
 Created on Oct 24, 2013
 
-@author: raven
+@author: Simon Bartels
 '''
+from model.model_factory import ModelFactory
 
-class MyClass(object):
+
+class GPModelFactory(ModelFactory):
     '''
     classdocs
     '''

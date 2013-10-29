@@ -4,11 +4,11 @@ Created on Oct 28, 2013
 @author: Simon Bartels
 '''
 
-import model
 import gp
 import numpy as np
+from model.model import Model
 
-class gp_model(model):
+class GPModel(Model):
     '''
     classdocs
     '''

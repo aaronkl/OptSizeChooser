@@ -4,9 +4,7 @@ Created on Oct 24, 2013
 @author: Simon Bartels
 '''
 
-import numpy as np
-
-class ModelFactory(object):
+class ModelFactory():
     '''
     classdocs
     '''
@@ -16,7 +14,10 @@ class ModelFactory(object):
         '''
         Constructor
         '''
-        pass
+        raise NotImplementedError("Abstract Method!")
         
     def create(self, X, Y):
-        pass
+        '''
+        Creates a model.
+        '''
+        raise NotImplementedError("Abstract Method!")
