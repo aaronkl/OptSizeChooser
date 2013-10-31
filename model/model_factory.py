@@ -16,7 +16,7 @@ class ModelFactory():
         '''
         raise NotImplementedError("Abstract Method!")
         
-    def create(self, X, Y):
+    def create(self, X, y):
         '''
         Creates a model.
         '''
