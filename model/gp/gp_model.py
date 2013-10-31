@@ -8,7 +8,7 @@ import gp
 import numpy as np
 import scipy.linalg as spla
 from ..model import Model
-import pickle
+import copy
 
 
 
@@ -103,16 +103,20 @@ classdocs
         x = np.array([x])
         cholsolve = spla.cho_solve((self._L, True), self._compute_covariance(self._X, x))
         cholesky = np.sqrt(self._compute_covariance(x, x) - 
-                           self._compute_covariance(x, self._X) * cholsolve)
+                           np.dot(self._compute_covariance(x, self._X), cholsolve))
         y = self.predict(x,False) + cholesky * omega
-        return y
+        #y is in the form [[value]]
+        return y[0][0]
         
     def update(self, x, y):
         '''
             Adds x,y to the observation and creates a new GP 
+            Args:
+                x: a numpy vector
+                y: a single value
         '''
-        self._X = np.append(self._X, x)
-        self._y = np.append(self._y, y)
+        self._X = np.append(self._X, np.array([x]), axis=0)
+        self._y = np.append(self._y, np.array([y]), axis=0)
         #TODO: Use factor update
         self._compute_cholesky()
         
@@ -121,7 +125,7 @@ classdocs
             Draws a function by evaluating the GP at points and does not change the GP
         '''
         #TODO: Use seed
-        gp_copy = pickle.copy.deepcopy(self)
+        gp_copy = copy.deepcopy(self)
         omega = np.random.normal(0, 1, len(points))
         func_values = np.zeros(len(points))
         for i in xrange(0,len(points)-1):

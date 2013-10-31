@@ -13,16 +13,13 @@ from model.gp.gp_model import GPModel
 from compiler.ast import IfExp
 import scipy.linalg as spla
 from acquisition_functions.expected_improvement import ExpectedImprovement
+from acquisition_functions.entropy_search import EntropySearch
 
 def init(expt_dir, arg_string):
     args = util.unpack_args(arg_string)
     return OptSizeChooser(expt_dir, **args)
 
 class OptSizeChooser():
-    '''
-    classdocs
-    '''
-
     def __init__(self, expt_dir, covar="Matern52", mcmc_iters=10,
                  pending_samples=100, noiseless=False, burnin=100,
                  grid_subset=20):
@@ -30,6 +27,7 @@ class OptSizeChooser():
         Constructor
         '''
 
+        #TODO: change back
         self._mcmc_iters = mcmc_iters
         self._noiseless = noiseless
         self.burnin = burnin
@@ -125,15 +123,20 @@ class OptSizeChooser():
                     
         overall_ac_value = np.zeros((len(cand),1))
         
-        #TODO: Initialize the acquisition function
-        acquisition_function = ExpectedImprovement(comp, vals)
               
-        #Iterate over all candidates
-        for i in xrange(0, len(cand)):
-            #Iterate over all Gaussian Process
-            for h in range(0, len(self._gaussian_process_mixture) - 1):
-                
-                overall_ac_value[i] += acquisition_function.compute(cand[i], self._gaussian_process_mixture[h])
+        #Iterate over all Gaussian Process
+        for h in range(0, len(self._gaussian_process_mixture) - 1):
+            #TODO: remove
+            print "hyper parameter sample: " + str(h)
+            gp = self._gaussian_process_mixture[h]
+            #Use current best as starting point.
+            starting_point = comp[np.argmin(vals)]
+            acquisition_function = self._initialize_acquisition_function(starting_point, vals, gp)
+            #Iterate over all candidates
+            for i in xrange(0, len(cand)):
+                #TODO: rempve
+                print "candidate: " + str(i) 
+                overall_ac_value[i] += acquisition_function.compute(cand[i], gp)
 
         
         #TODO: This just a workaround because the predict() of the gp class only takes matrices as an input.
@@ -161,7 +164,16 @@ class OptSizeChooser():
 
         return int(candidates[best_cand])
 
-
+    def _initialize_acquisition_function(self, starting_point, vals, gp):
+        #TODO: generalize initialisation of the acquisition function
+        ei = ExpectedImprovement(vals)
+        def log_proposal_measure(x):
+            #TODO: catch case if EI is close to 0
+            v = ei.compute(x, gp)
+            return np.log(v)
+        return EntropySearch(log_proposal_measure, starting_point)
+        
+    
     def _sampling_hyperparameters(self):
       
         self._mean = np.mean(self._func_values)

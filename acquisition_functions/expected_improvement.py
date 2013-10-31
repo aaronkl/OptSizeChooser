@@ -13,7 +13,7 @@ class ExpectedImprovement():
     classdocs
     '''
 
-    def __init__(self, completed_values, func_values):
+    def __init__(self, func_values):
         '''
         Constructor
         '''
