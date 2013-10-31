@@ -1,7 +1,7 @@
 '''
 Created on Oct 29, 2013
 
-@author: raven
+@author: Simon Bartels
 '''
 import unittest
 
