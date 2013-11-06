@@ -42,13 +42,13 @@ class Test(unittest.TestCase):
     
     def _ei_spear_mint(self, cand, comp, vals, compute_grad=True):
         """
-        No support for pending values.
+        Computes EI and gradient of EI as in spear mint.
         """
         best = np.min(vals)
 
         # The primary covariances for prediction.
-        comp_cov = self.cov(self.ls, comp)
-        cand_cross = self.cov(self.ls, comp, cand)
+        comp_cov = self.amp2 * self.cov(self.ls, comp)
+        cand_cross = self.amp2 * self.cov(self.ls, comp, cand)
 
         # Compute the required Cholesky.
         obsv_cov = comp_cov + self.noise * np.eye(comp.shape[0])
@@ -73,7 +73,7 @@ class Test(unittest.TestCase):
         if not compute_grad:
             return ei
         
-        cand_cross_grad = self.cov_grad_func(self.ls, comp, cand)
+        cand_cross_grad = self.amp2 * self.cov_grad_func(self.ls, comp, cand)
 
         # Gradients of ei w.r.t. mean and variance
         g_ei_m = -ncdf
@@ -87,16 +87,14 @@ class Test(unittest.TestCase):
                 (obsv_chol, True), cand_cross).transpose(), grad_cross)
 
         grad_xp = 0.5 * self.amp2 * (grad_xp_m * g_ei_m + grad_xp_v * g_ei_s2)
-
-        return ei, grad_xp
+        return ei, grad_xp[0]
     
     def testGradientEI(self):
         incumbent = np.min(self.y)
         xstar = np.array([scale * npr.randn(d)])
         ei = expected_improvement(self.gp, incumbent, xstar, gradient=True)[1]
         ei_sp = self._ei_spear_mint(xstar, self.X, self.y, compute_grad=True)[1]
-        print (ei, ei_sp)
-        assert(abs(ei-ei_sp) < 0.01)
+        assert(spla.norm(ei-ei_sp) < 1e-50)
 
 
 

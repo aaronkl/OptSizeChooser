@@ -39,8 +39,8 @@ class Test(unittest.TestCase):
         '''
         xstar = np.array([scale * npr.randn(d)])
                 # The primary covariances for prediction.
-        comp_cov = self.cov(self.ls, self.X)
-        cand_cross = self.cov(self.ls, self.X, xstar)
+        comp_cov = self.amp2 * self.cov(self.ls, self.X)
+        cand_cross = self.amp2 * self.cov(self.ls, self.X, xstar)
 
         # Compute the required Cholesky.
         obsv_cov = comp_cov + self.noise * np.eye(self.X.shape[0])
@@ -52,8 +52,10 @@ class Test(unittest.TestCase):
         func_m = np.dot(cand_cross.T, alpha) + self.mean
         func_v = self.amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
         (m,v) = self.gp.predict(xstar, variance=True)
-        assert(abs(func_m-m) < 0.01)
-        assert(abs(func_v-v) < 0.01)
+        #print (func_m, m)
+        #print (func_v, v)
+        assert(abs(func_m-m) < 0.0001)
+        assert(abs(func_v-v) < 0.0001)
 
 
     def testGetGradients(self):
@@ -61,10 +63,10 @@ class Test(unittest.TestCase):
         Compares the gradients computed as done originally in spear-mint with our implementation.
         '''
         xstar = np.array([scale * npr.randn(d)])
-        cand_cross_grad = self.cov_grad_func(self.ls, self.X, xstar)
+        cand_cross_grad = self.amp2 * self.cov_grad_func(self.ls, self.X, xstar)
         
-        comp_cov = self.cov(self.ls, self.X)
-        cand_cross = self.cov(self.ls, self.X, xstar)
+        comp_cov = self.amp2 * self.cov(self.ls, self.X)
+        cand_cross = self.amp2 * self.cov(self.ls, self.X, xstar)
 
         # Compute the required Cholesky.
         obsv_cov = comp_cov + self.noise * np.eye(self.X.shape[0])
@@ -72,21 +74,20 @@ class Test(unittest.TestCase):
         # Predictive things.
         # Solve the linear systems.
         alpha = spla.cho_solve((obsv_chol, True), self.y - self.mean)
+        beta = spla.solve_triangular(obsv_chol, cand_cross, lower=True)
 
+        func_v = self.amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
         # Apply covariance function
         grad_cross = np.squeeze(cand_cross_grad)
-
-        grad_xp_m = np.dot(alpha.transpose(), grad_cross)
-        #For no apparent reason xp_v is originally multiplied by a factor of 2
-        #for the test this has been removed
-        grad_xp_v = np.dot(-spla.cho_solve(
-                (obsv_chol, True), cand_cross).transpose(), grad_cross)
+        grad_xp_m = -np.dot(alpha.transpose(), grad_cross)
+        grad_xp_v = -2 * np.dot(spla.cho_solve(
+                (obsv_chol, True), cand_cross).transpose(), grad_cross) / np.sqrt(func_v[0])
         
         (mg,mv) = self.gp.getGradients(xstar[0])
-        print (mg, grad_xp_m)
-        print (mv, grad_xp_v)
-        assert(spla.norm(mg - grad_xp_m) < 0.001)
-        assert(spla.norm(mv[0] - grad_xp_v[0]) < 0.001)
+        #print (mg, grad_xp_m)
+        #print (mv, grad_xp_v)
+        assert(spla.norm(mg - grad_xp_m) < 1e-50)
+        assert(spla.norm(mv[0] - grad_xp_v[0]) < 1e-50)
 
 
 if __name__ == "__main__":

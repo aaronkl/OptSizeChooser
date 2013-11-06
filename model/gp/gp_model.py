@@ -10,9 +10,9 @@ import scipy.linalg as spla
 from model.model import Model
 
 
-def _get_cholesky(cov, X, noise, ls):
+def _get_cholesky(cov, X, noise, ls, amp2):
     # Compute the required Cholesky.
-    K = cov(ls, X) + noise * np.eye(X.shape[0])
+    K = amp2 * cov(ls, X) + noise * np.eye(X.shape[0])
     L = spla.cholesky(K, lower=True)
     return L
 
@@ -39,11 +39,11 @@ class GPModel(Model):
         self._noise = 1e-3
         self._mean = self.mean = np.mean(y)
         #the Cholesky of the correlation matrix
-        self._L = _get_cholesky(self._covar, self._X, self._noise, self._ls)
+        self._L = _get_cholesky(self._covar, self._X, self._noise, self._ls, self._amp2)
         self._alpha = spla.cho_solve((self._L, True), self._y - self._mean)
         
     def predict(self, Xstar, variance=False):
-        kXstar = self._covar(self._ls, self._X, Xstar)
+        kXstar = self._amp2 * self._covar(self._ls, self._X, Xstar)
         func_m = np.dot(kXstar.T, self._alpha) + self.mean
         if not variance:
             return func_m
@@ -53,22 +53,29 @@ class GPModel(Model):
         return (func_m, func_v)
         
     def getGradients(self, xstar):
-        #TODO: Might be that sign of mean gradient is wrong!
         xstar = np.array([xstar])
         # gradient of mean
         # dk(X,x*) / dx
-        dk = self._amp2 * self._covar_derivative(self._ls, xstar, self._X)[0]
-        grad_m = np.dot(dk.T, self._alpha)
+        dk = self._amp2 * self._covar_derivative(self._ls, self._X, xstar)
+        dk = np.squeeze(dk)
+        #If dk is written like below, there's no need to squeeze.
+        #But we stick to spear mint as close as possible.
+        #Seems like the version below has a different sign!
+        #dk = self._amp2 * self._covar_derivative(self._ls, xstar, self._X)[0]
+        grad_m = np.dot(self._alpha.T, dk)
         
         # gradient of variance
-        k = self._amp2 * self._covar(self._ls, xstar, self._X)
+        k = self._amp2 * self._covar(self._ls, self._X, xstar)
         #kK = k^T * K^-1
-        kK = spla.cho_solve((self._L, True), k.T)
+        kK = spla.cho_solve((self._L, True), k)
         (_, v) = self.predictVariance(xstar)
-        grad_v = -np.dot(kK.T, dk) / np.sqrt(v[0])
+        #This 2 comes from the fact that we want the derivative of the variance!
+        #(and not the standard deviation)
+        grad_v = -2 * np.dot(kK.T, dk) / np.sqrt(v[0])
         #As in spear mint grad_v is of the form [[v1, v2, ...]]
         #TODO: Check if this is really necessary. Seems dirty.
-        return (grad_m, grad_v)
+        #TODO: Appearantly the sign of the mean gradient is wrong!
+        return (-grad_m, grad_v)
     
     def optimize(self):
         #TODO: implement
