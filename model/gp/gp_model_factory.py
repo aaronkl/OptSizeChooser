@@ -17,6 +17,7 @@ class GPModelFactory(ModelFactory):
         '''
         Constructor
         '''
+        pass
         
     def create(self, X, y):
         return gp_model.GPModel(X, y, "ARDSE")

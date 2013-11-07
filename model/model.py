@@ -42,6 +42,14 @@ class Model():
         '''
         raise NotImplementedError("Abstract Method!")
     
+    def getNoise(self):
+        '''
+        Returns the amount of the noise the model guesses.
+        Returns:
+            double value >= 0
+        '''
+        raise NotImplementedError("Abstract Method!")
+    
     def optimize(self):
         '''
         Triggers the hyper-parameter optimization of this model.

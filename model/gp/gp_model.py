@@ -68,16 +68,20 @@ class GPModel(Model):
         k = self._amp2 * self._covar(self._ls, self._X, xstar)
         #kK = k^T * K^-1
         kK = spla.cho_solve((self._L, True), k)
-        (_, v) = self.predictVariance(xstar)
-        #This 2 comes from the fact that we want the derivative of the variance!
+        
+        #kK^Tdk=s'(x). So for the derivative of v(x) in terms of s(x) we have:
+        #v(x)=s^2(x) <=> v'(x)=2s(x)*s'(x)
         #(and not the standard deviation)
-        grad_v = -2 * np.dot(kK.T, dk) / np.sqrt(v[0])
+        grad_v = -2  * np.dot(kK.T, dk)
         #As in spear mint grad_v is of the form [[v1, v2, ...]]
         #TODO: Check if this is really necessary. Seems dirty.
         #TODO: Appearantly the sign of the mean gradient is wrong!
         return (-grad_m, grad_v)
     
+    def getNoise(self):
+        return self._noise
+    
     def optimize(self):
         #TODO: implement
-        raise NotImplementedError("Not implemented yet!")
-        
+        #raise NotImplementedError("Not implemented yet!")
+        pass

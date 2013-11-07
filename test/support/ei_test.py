@@ -94,6 +94,7 @@ class Test(unittest.TestCase):
         xstar = np.array([scale * npr.randn(d)])
         ei = expected_improvement(self.gp, incumbent, xstar, gradient=True)[1]
         ei_sp = self._ei_spear_mint(xstar, self.X, self.y, compute_grad=True)[1]
+        print (ei, ei_sp)
         assert(spla.norm(ei-ei_sp) < 1e-50)
 
 

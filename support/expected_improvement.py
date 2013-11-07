@@ -26,7 +26,7 @@ def expected_improvement(model, incumbent, Xstar, gradient=False):
         #TODO: This is actually a bit inefficient, since getGradient computes the variance again
         #which we already have here!
         (mg, vg) = model.getGradients(xstar)
-        sg = 0.5 * vg #we want the gradient of s(x) not of s^2(x)
+        sg = 0.5 * vg / func_s #we want the gradient of s(x) not of s^2(x)
         
         # this is the result after some simplifications
         grad = npdf * sg + ncdf * mg

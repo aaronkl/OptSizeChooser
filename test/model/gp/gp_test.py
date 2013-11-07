@@ -74,15 +74,13 @@ class Test(unittest.TestCase):
         # Predictive things.
         # Solve the linear systems.
         alpha = spla.cho_solve((obsv_chol, True), self.y - self.mean)
-        beta = spla.solve_triangular(obsv_chol, cand_cross, lower=True)
 
-        func_v = self.amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
         # Apply covariance function
         grad_cross = np.squeeze(cand_cross_grad)
         grad_xp_m = -np.dot(alpha.transpose(), grad_cross)
         grad_xp_v = -2 * np.dot(spla.cho_solve(
-                (obsv_chol, True), cand_cross).transpose(), grad_cross) / np.sqrt(func_v[0])
-        
+                (obsv_chol, True), cand_cross).transpose(), grad_cross)
+               
         (mg,mv) = self.gp.getGradients(xstar[0])
         #print (mg, grad_xp_m)
         #print (mv, grad_xp_v)
