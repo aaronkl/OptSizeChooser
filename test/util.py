@@ -21,7 +21,7 @@ def copy_parameters(obj, gp):
     Copies the parameters of the GP into this object.
     Necessary for the spearmint GP.
     '''
-    obj.cov = gp._covar
+    obj.cov = gp._cov_func
     obj.cov_grad_func = gp._covar_derivative
     obj.ls = gp._ls
     obj.noise = gp._noise

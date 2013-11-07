@@ -82,8 +82,8 @@ class Test(unittest.TestCase):
                 (obsv_chol, True), cand_cross).transpose(), grad_cross)
                
         (mg,mv) = self.gp.getGradients(xstar[0])
-        #print (mg, grad_xp_m)
-        #print (mv, grad_xp_v)
+        print (mg, grad_xp_m)
+        print (mv, grad_xp_v)
         assert(spla.norm(mg - grad_xp_m) < 1e-50)
         assert(spla.norm(mv[0] - grad_xp_v[0]) < 1e-50)
 
