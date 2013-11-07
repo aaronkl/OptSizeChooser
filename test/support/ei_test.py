@@ -46,7 +46,6 @@ class Test(unittest.TestCase):
         """
         best = np.min(vals)
 
-        # The primary covariances for prediction.
         comp_cov = self.gp._compute_covariance(comp)
         cand_cross = self.amp2 * self.cov(self.ls, comp, cand)
 
