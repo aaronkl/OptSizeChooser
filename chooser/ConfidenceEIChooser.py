@@ -14,25 +14,6 @@ import support.expected_improvement as ei_calc
 import util
 from model.gp.gp_model_factory import GPModelFactory
 
-def optimize_pt(candidate, b, incumbent, chooser):
-        '''
-        Locally optimizes the augmented EI criterion starting from the candidate.
-        Returns a tuple containing the new candidate and it's EI value.
-        '''
-        dimension = (-1, candidate.shape[0])
-        print candidate.flatten()
-        
-        #ret = spo.fmin_l_bfgs_b(chooser._augmented_ei,
-        #                        candidate.flatten(), fprime=None, args=(incumbent, dimension),
-        #                        bounds=b, disp=0)
-        ret = spo.fmin_l_bfgs_b(test_wrapper,
-                                candidate.flatten(), fprime=None, args=(),
-                                bounds=b, disp=0)
-        return (ret[0], ret[1])
-    
-def test_wrapper(arg):
-    return (arg, 0)
-
 def init(expt_dir, arg_string):
     args = util.unpack_args(arg_string)
     return ConfidenceEIChooser(expt_dir, **args)
@@ -81,6 +62,19 @@ class ConfidenceEIChooser:
         u = -m - s
         i = np.argmin(u)
         return -m[i] - s[i]
+    
+    def _optimize_pt(self, candidate, b, incumbent):
+        '''
+        Locally optimizes the augmented EI criterion starting from the candidate.
+        Returns a tuple containing the new candidate and it's EI value.
+        '''
+        dimension = (-1, candidate.shape[0])
+        print candidate.flatten()
+        
+        ret = spo.fmin_l_bfgs_b(self._augmented_ei,
+                                candidate.flatten(), args=(incumbent, dimension),
+                                bounds=b, disp=0)
+        return (ret[0], ret[1])
 
     
     
@@ -95,8 +89,6 @@ class ConfidenceEIChooser:
         cand = np.reshape(cand, dimension)
         (ei, grad_ei) = ei_calc.expected_improvement(self.model, incumbent, cand, gradient=True)
         (_, v) = self.model.predictVariance(cand)
-        print cand[0]
-        print cand[0].shape
         #FIXME: fails!
         (_, grad_v) = self.model.getGradients(cand[0])
         noise = self.model.getNoise()
@@ -108,4 +100,4 @@ class ConfidenceEIChooser:
         
         grad_aug = -noise / 2 * grad_v / sqr**3
         grad_aug_ei = grad_ei * aug + ei * grad_aug #product rule
-        return (aug_ei, grad_aug_ei)
+        return (aug_ei, grad_aug_ei.flatten())

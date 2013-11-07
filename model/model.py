@@ -49,9 +49,3 @@ class Model():
             double value >= 0
         '''
         raise NotImplementedError("Abstract Method!")
-    
-    def optimize(self):
-        '''
-        Triggers the hyper-parameter optimization of this model.
-        '''
-        raise NotImplementedError("Abstract Method!")

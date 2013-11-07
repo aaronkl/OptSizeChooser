@@ -11,8 +11,14 @@ import numpy.random as npr
 from test.util import *
 from model.gp import gp_model_factory
 
-
+'''
+The number of input dimensions for the Gaussian Process.
+'''
 d = 2
+
+'''
+Scale/distribution of the inputs, i.e. factor to the normal distribution.
+'''
 scale = 25
 
 class Test(unittest.TestCase):
@@ -52,8 +58,8 @@ class Test(unittest.TestCase):
         func_m = np.dot(cand_cross.T, alpha) + self.mean
         func_v = self.amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
         (m,v) = self.gp.predict(xstar, variance=True)
-        #print (func_m, m)
-        #print (func_v, v)
+#         print (func_m, m)
+#         print (func_v, v)
         assert(abs(func_m-m) < 0.0001)
         assert(abs(func_v-v) < 0.0001)
 
@@ -65,7 +71,7 @@ class Test(unittest.TestCase):
         xstar = np.array([scale * npr.randn(d)])
         cand_cross_grad = self.amp2 * self.cov_grad_func(self.ls, self.X, xstar)
         
-        comp_cov = self.amp2 * self.cov(self.ls, self.X)
+        comp_cov = self.gp._compute_covariance(self.X)
         cand_cross = self.amp2 * self.cov(self.ls, self.X, xstar)
 
         # Compute the required Cholesky.

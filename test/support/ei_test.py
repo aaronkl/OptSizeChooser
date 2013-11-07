@@ -47,11 +47,11 @@ class Test(unittest.TestCase):
         best = np.min(vals)
 
         # The primary covariances for prediction.
-        comp_cov = self.amp2 * self.cov(self.ls, comp)
-        cand_cross = self.amp2 * self.cov(self.ls, comp, cand)
+        comp_cov = self.gp._compute_covariance(self.X)
+        cand_cross = self.amp2 * self.cov(self.ls, self.X, cand)
 
         # Compute the required Cholesky.
-        obsv_cov = comp_cov + self.noise * np.eye(comp.shape[0])
+        obsv_cov = comp_cov + self.noise * np.eye(self.X.shape[0])
         obsv_chol = spla.cholesky(obsv_cov, lower=True)
 
         # Predictive things.

@@ -34,7 +34,7 @@ y: The corresponding observed values.
         self._mean = mean
         self._noise = noise
         #the Cholesky of the correlation matrix
-        self._K = self._compute_covariance(X)
+        self._K = self._compute_covariance(X) + self._noise * np.eye(self._X.shape[0])
         self._L = spla.cholesky(self._K, lower=True)
         self._alpha = spla.cho_solve((self._L, True), self._y - self._mean)
         
@@ -71,16 +71,14 @@ y: The corresponding observed values.
         k = self._compute_covariance(self._X, xstar)
         #kK = k^T * K^-1
         kK = spla.cho_solve((self._L, True), k)
-        (_, v) = self.predictVariance(xstar)
-        #This 2 comes from the fact that we want the derivative of the variance!
-        #(and not the standard deviation)
-        grad_v = -2 * np.dot(kK.T, dk) / np.sqrt(v[0])
+        #kK^Tdk=s'(x). So for the derivative of v(x) in terms of s(x) we have:
+        #v(x)=s^2(x) <=> v'(x)=2s(x)*s'(x)
+        grad_v = -2 * np.dot(kK.T, dk)
         #As in spear mint grad_v is of the form [[v1, v2, ...]]
         #TODO: Check if this is really necessary. Seems dirty.
         #TODO: Appearantly the sign of the mean gradient is wrong!
         return (-grad_m, grad_v)
-    
-    def optimize(self):
-        #TODO: implement
-        raise NotImplementedError("Not implemented yet!")
+
+    def getNoise(self):
+        return self._noise
         
