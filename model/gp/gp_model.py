@@ -7,7 +7,7 @@ Created on Oct 28, 2013
 import gp
 import numpy as np
 import scipy.linalg as spla
-from model.model import Model
+from ..model import Model
 
 
 
@@ -48,6 +48,10 @@ y: The corresponding observed values.
         func_v = self._amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
         return (func_m, func_v)
 
+    def predict_vector(self, input_point):
+        (func_m, func_v) = self.predict(np.array([input_point]), True)
+        return (func_m[0], func_v[0])
+    
     def _compute_covariance(self, x1, x2=None):
         if x2 is None:
             return self._amp2 * (self._cov_func(self._ls, x1, None)
