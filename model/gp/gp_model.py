@@ -8,6 +8,7 @@ import gp
 import numpy as np
 import scipy.linalg as spla
 from ..model import Model
+import pickle
 
 
 
@@ -19,11 +20,11 @@ classdocs
     def __init__(self, X, y, mean, noise, amp2, ls, covarname="Matern52"):
         #TODO: just a stub
         '''
-Constructor
-Args:
-X: The observed inputs.
-y: The corresponding observed values.
-'''
+            Constructor
+            Args:
+            X: The observed inputs.
+            y: The corresponding observed values.
+        '''
         
         self._X = X
         self._y = y
@@ -33,8 +34,12 @@ y: The corresponding observed values.
         self._amp2 = amp2
         self._mean = mean
         self._noise = noise
+        
+        self._compute_cholesky()
+        
+    def _compute_cholesky(self):
         #the Cholesky of the correlation matrix
-        self._K = self._compute_covariance(X) + self._noise * np.eye(self._X.shape[0])
+        self._K = self._compute_covariance(self._X) + self._noise * np.eye(self._X.shape[0])
         self._L = spla.cholesky(self._K, lower=True)
         self._alpha = spla.cho_solve((self._L, True), self._y - self._mean)
         
@@ -86,3 +91,42 @@ y: The corresponding observed values.
     def getNoise(self):
         return self._noise
         
+    #def draw(self):
+        
+    def sample(self, x, omega):
+        '''
+            Gives a stochastic prediction at x
+            Parameters In: omega = sample from standard normal distribution 
+                            x = the prediction point (vector)
+            Parameters Out: y = function value at x
+        '''
+        x = np.array([x])
+        cholsolve = spla.cho_solve((self._L, True), self._compute_covariance(self._X, x))
+        cholesky = np.sqrt(self._compute_covariance(x, x) - 
+                           self._compute_covariance(x, self._X) * cholsolve)
+        y = self.predict(x,False) + cholesky * omega
+        return y
+        
+    def update(self, x, y):
+        '''
+            Adds x,y to the observation and creates a new GP 
+        '''
+        self._X = np.append(self._X, x)
+        self._y = np.append(self._y, y)
+        #TODO: Use factor update
+        self._compute_cholesky()
+        
+    def draw(self, points):
+        '''
+            Draws a function by evaluating the GP at points and does not change the GP
+        '''
+        #TODO: Use seed
+        gp_copy = pickle.copy.deepcopy(self)
+        omega = np.random.normal(0, 1, len(points))
+        func_values = np.zeros(len(points))
+        for i in xrange(0,len(points)-1):
+            func_values[i] = gp_copy.sample(points[i], omega[i])
+            gp_copy.update(points[i], func_values[i])
+            
+        return func_values
+            
