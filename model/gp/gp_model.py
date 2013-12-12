@@ -13,9 +13,6 @@ import copy
 
 
 class GPModel(Model):
-    '''
-classdocs
-'''
 
     def __init__(self, X, y, mean, noise, amp2, ls, covarname="Matern52"):
         #TODO: just a stub
@@ -85,13 +82,11 @@ classdocs
         grad_v = -2 * np.dot(kK.T, dk)
         #As in spear mint grad_v is of the form [[v1, v2, ...]]
         #TODO: Check if this is really necessary. Seems dirty.
-        #TODO: Appearantly the sign of the mean gradient is wrong!
+        #TODO: Apparently the sign of the mean gradient is wrong!
         return (-grad_m, grad_v)
 
     def getNoise(self):
         return self._noise
-        
-    #def draw(self):
         
     def sample(self, x, omega):
         '''
@@ -120,17 +115,21 @@ classdocs
         #TODO: Use factor update
         self._compute_cholesky()
         
-    def draw(self, points):
+    def drawJointSample(self, Xstar, omega):
         '''
-            Draws a function by evaluating the GP at points and does not change the GP
+            Draws a joint sample at the given points.
+            Args:
+                X: a numpy array of points, i.e. a matrix
+                omega: a vector of samples from the standard normal distribution, one for each point
+            Returns:
+                a numpy array (vector)
         '''
-        #TODO: Use seed
-        gp_copy = copy.deepcopy(self)
-        omega = np.random.normal(0, 1, len(points))
-        func_values = np.zeros(len(points))
-        for i in xrange(0,len(points)-1):
-            func_values[i] = gp_copy.sample(points[i], omega[i])
-            gp_copy.update(points[i], func_values[i])
-            
-        return func_values
+        kXstar = self._compute_covariance(self._X, Xstar)
+        cholsolve = spla.cho_solve((self._L, True), kXstar)
+        Sigma = (self._compute_covariance(Xstar, Xstar) -
+                  np.dot(kXstar.T, cholsolve))
+        cholesky = spla.cholesky(Sigma + 1e-6*np.eye(Sigma.shape[0]))
+        y = self.predict(Xstar,False) + np.dot(cholesky, omega)
+        #y is in the form [[value]]
+        return y
             

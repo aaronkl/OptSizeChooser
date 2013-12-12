@@ -22,7 +22,7 @@ def sample_representer_points(starting_point, log_proposal_measure, number_of_po
     '''
     representer_points = np.zeros([number_of_points,starting_point.shape[0]])
     log_values = np.zeros(number_of_points)
-    for i in range(0,number_of_points-1):
+    for i in range(0,number_of_points):
         representer_points[i] = util.slice_sample(starting_point, log_proposal_measure)
         starting_point = representer_points[i]
         log_values[i] = log_proposal_measure(starting_point)

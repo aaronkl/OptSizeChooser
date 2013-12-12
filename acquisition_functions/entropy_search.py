@@ -8,6 +8,7 @@ This class implements an acquisition function similar to what is proposed in
 Instead of using Expectation Propagation we apply sampling.
 '''
 import numpy as np
+import numpy.random as npr
 import copy
 import support.pmin_discretization as pmin_discretization
 
@@ -49,16 +50,16 @@ class EntropySearch():
             gp_copy = copy.deepcopy(gp)
             gp_copy.update(candidate, y)
             for s in xrange(0,NUMBER_OF_PMIN_SAMPLES):
-                vals = gp_copy.draw(self._representers)
-                #FIXME: Seems like we are using an old version of numpy => argmin returns a number!
-                current_min = np.argmin(vals)
-                #for m in current_min:
-                #    pmin[m] += 1/(current_min.shape[0])
-                
-                #This is the fix:
-                pmin[current_min]+=1
+                omega2 = npr.normal(0, 1, NUMBER_OF_REPRESENTER_POINTS) #1-dimensional samples
+                vals = gp_copy.drawJointSample(self._representers, omega2)
+                mins = np.where(vals == vals.min())
+                number_of_mins = len(mins)
+                #mins is a tuple of single valued array
+                for m in mins:
+                    #have to extract the value of the aray
+                    pmin[m[0]] += 1/(number_of_mins)
             pmin = pmin / NUMBER_OF_PMIN_SAMPLES
-            entropy_pmin = - np.dot(pmin, np.log(pmin))
+            entropy_pmin = - np.dot(pmin, np.log(pmin+1e-10))
             log_proposal = np.dot(self._log_proposal_vals, pmin)
             
             kl_divergence = entropy_pmin - log_proposal 

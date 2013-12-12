@@ -10,6 +10,7 @@ import gp
 import numpy.random as npr
 from test.util import *
 from model.gp import gp_model_factory
+import copy
 
 '''
 The number of input dimensions for the Gaussian Process.
@@ -88,11 +89,26 @@ class Test(unittest.TestCase):
                 (obsv_chol, True), cand_cross).transpose(), grad_cross)
                
         (mg,mv) = self.gp.getGradients(xstar[0])
-        print (mg, grad_xp_m)
-        print (mv, grad_xp_v)
+        #print (mg, grad_xp_m)
+        #print (mv, grad_xp_v)
         assert(spla.norm(mg - grad_xp_m) < 1e-50)
         assert(spla.norm(mv[0] - grad_xp_v[0]) < 1e-50)
-
+        
+    def testDrawJointSample(self):
+        '''
+        Tests how the Gaussian process draws joint samples against a naive implementation.
+        '''
+        N = npr.randint(1,25)
+        Xstar = scale * npr.randn(N,d)
+        omega = npr.normal(0,1,N)
+        y2 = self.gp.drawJointSample(Xstar, omega)
+        
+        gp_copy = copy.deepcopy(self.gp)
+        y1 = np.zeros(N)
+        for i in range(0,N):
+            y1[i] = gp_copy.sample(Xstar[i], omega[i])
+            gp_copy.update(Xstar[i], y1[i])
+        assert(spla.norm(y1 - y2) < 1e-50)
 
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
