@@ -16,6 +16,8 @@ from support.expected_improvement import expected_improvement
 d = 2
 scale = 25
 
+#TODO: us EI acquisition function for testing!
+
 class Test(unittest.TestCase):
 
 
@@ -46,8 +48,8 @@ class Test(unittest.TestCase):
         """
         best = np.min(vals)
 
-        comp_cov = self.gp._compute_covariance(comp)
-        cand_cross = self.amp2 * self.cov(self.ls, comp, cand)
+        comp_cov   = cov(self, comp)
+        cand_cross = cov(self, self.X, cand)
 
         # Compute the required Cholesky.
         obsv_cov = comp_cov + self.noise * np.eye(comp.shape[0])

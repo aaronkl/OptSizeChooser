@@ -9,19 +9,16 @@ import scipy.stats    as sps
 
 
 class ExpectedImprovement():
-    '''
-    classdocs
-    '''
-
-    def __init__(self, func_values):
+    def initialize(self, comp, vals, gp, cost_gp=None):
         '''
         Constructor
         '''
-        self._incumbent = np.min(func_values)
+        self._incumbent = np.min(vals)
+        self._gp = gp
         
-    def compute(self, candidate, gp, compute_gradient = False):
+    def compute(self, candidate, compute_gradient = False):
         
-        (func_m, func_v) = gp.predict_vector(candidate)
+        (func_m, func_v) = self._gp.predict_vector(candidate)
 
         # Expected improvement
         func_s = np.sqrt(func_v)
@@ -36,7 +33,7 @@ class ExpectedImprovement():
     
         #TODO: This is actually a bit inefficient, since getGradient computes the variance again
         #which we already have here!
-        (mg, vg) = gp.getGradients(candidate)
+        (mg, vg) = self._gp.getGradients(candidate)
         sg = 0.5 * vg / func_s #we want the gradient of s(x) not of s^2(x)
         
         # this is the result after some simplifications

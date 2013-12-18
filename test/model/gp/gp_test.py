@@ -23,8 +23,6 @@ Scale/distribution of the inputs, i.e. factor to the normal distribution.
 scale = 25
 
 class Test(unittest.TestCase):
-
-
     def setUp(self):
         self.random_state = npr.get_state()
         #print "random state:"
@@ -45,13 +43,14 @@ class Test(unittest.TestCase):
         Assumes that the spear mint implementation is correct.
         '''
         xstar = np.array([scale * npr.randn(d)])
-                # The primary covariances for prediction.
-        comp_cov = self.amp2 * self.cov(self.ls, self.X)
-        cand_cross = self.amp2 * self.cov(self.ls, self.X, xstar)
+        # The primary covariances for prediction.
+        comp_cov   = cov(self, self.X)
+        cand_cross = cov(self, self.X, xstar)
 
         # Compute the required Cholesky.
         obsv_cov = comp_cov + self.noise * np.eye(self.X.shape[0])
         obsv_chol = spla.cholesky(obsv_cov, lower=True)
+        assert(spla.norm(obsv_chol-self.gp._L) == 0)
         alpha = spla.cho_solve((obsv_chol, True), self.y - self.mean)
         beta = spla.solve_triangular(obsv_chol, cand_cross, lower=True)
 
@@ -61,8 +60,8 @@ class Test(unittest.TestCase):
         (m,v) = self.gp.predict(xstar, variance=True)
 #         print (func_m, m)
 #         print (func_v, v)
-        assert(abs(func_m-m) < 0.0001)
-        assert(abs(func_v-v) < 0.0001)
+        assert(abs(func_m-m) < 1e-50)
+        assert(abs(func_v-v) < 1e-50)
 
 
     def testGetGradients(self):
@@ -72,8 +71,8 @@ class Test(unittest.TestCase):
         xstar = np.array([scale * npr.randn(d)])
         cand_cross_grad = self.amp2 * self.cov_grad_func(self.ls, self.X, xstar)
         
-        comp_cov = self.gp._compute_covariance(self.X)
-        cand_cross = self.amp2 * self.cov(self.ls, self.X, xstar)
+        comp_cov   = cov(self, self.X)
+        cand_cross = cov(self, self.X, xstar)
 
         # Compute the required Cholesky.
         obsv_cov = comp_cov + self.noise * np.eye(self.X.shape[0])
@@ -98,17 +97,35 @@ class Test(unittest.TestCase):
         '''
         Tests how the Gaussian process draws joint samples against a naive implementation.
         '''
-        N = npr.randint(1,25)
+        N = npr.randint(1,5)
         Xstar = scale * npr.randn(N,d)
         omega = npr.normal(0,1,N)
         y2 = self.gp.drawJointSample(Xstar, omega)
         
-        gp_copy = copy.deepcopy(self.gp)
         y1 = np.zeros(N)
         for i in range(0,N):
-            y1[i] = gp_copy.sample(Xstar[i], omega[i])
-            gp_copy.update(Xstar[i], y1[i])
-        assert(spla.norm(y1 - y2) < 1e-50)
+            y1[i] = self.gp.sample(Xstar[i], omega[i])
+            self.gp.update(Xstar[i], y1[i])
+        #the naive procedure is numerically unstable
+        #that's why we tolerate a higher error here
+        assert(spla.norm(y1 - y2) < 1e-10)
+        
+    def testCopy(self):
+        '''
+        Asserts that the copy of a GP does indeed not influence the GP it was copied from.
+        '''
+        xstar = np.array([scale * npr.randn(d)])
+        (mu, sigma) = self.gp.predict(xstar, variance=True)
+        gp_copy = self.gp.copy()
+        x_new = scale * npr.randn(d) #does not need to be a matrix
+        y_new = npr.rand()
+        gp_copy.update(x_new, y_new)
+        (mu2, sigma2) = self.gp.predict(xstar, variance=True)
+        assert(np.array_equal(mu, mu2))
+        assert(np.array_equal(sigma, sigma2))
+        
+    
+        
 
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']

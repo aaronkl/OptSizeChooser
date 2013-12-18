@@ -21,9 +21,19 @@ def copy_parameters(obj, gp):
     Copies the parameters of the GP into this object.
     Necessary for the spearmint GP.
     '''
-    obj.cov = gp._cov_func
+    obj.cov_func = gp._cov_func
     obj.cov_grad_func = gp._covar_derivative
     obj.ls = gp._ls
     obj.noise = gp._noise
     obj.mean = gp._mean
     obj.amp2 = gp._amp2
+    
+def cov(gp, x1, x2=None):
+    '''
+    Spearmint covariance function.
+    '''
+    if x2 is None:
+        return gp.amp2 * (gp.cov_func(gp.ls, x1, None)
+                           + 1e-6*np.eye(x1.shape[0]))
+    else:
+        return gp.amp2 * gp.cov_func(gp.ls, x1, x2)

@@ -14,30 +14,45 @@ import copy
 
 class GPModel(Model):
 
-    def __init__(self, X, y, mean, noise, amp2, ls, covarname="Matern52"):
+    def __init__(self, X, y, mean, noise, amp2, ls, covarname="Matern52", cholesky=None, alpha=None, cov_func = None, covar_derivative=None):
         #TODO: just a stub
         '''
             Constructor
             Args:
             X: The observed inputs.
             y: The corresponding observed values.
+            mean: the mean value
+            noise: the noise value
+            amp: the amplitude
+            ls: the length scales (numpy array of length equialent to the dimension of the input points)
+            covarname: the name of the covariance function (see spearmint class gp)
+            
+            The following arguments are only used internally for the copy() method.
+            cholesky: if already available the cholesky of the kernel matrix
+            alpha: if cholesky is passed this one needs to be set, too. It's L/L/(y-mean).
         '''
         
         self._X = X
         self._y = y
-        self._cov_func = getattr(gp, covarname)
-        self._covar_derivative = getattr(gp, "grad_" + covarname)
         self._ls = ls
         self._amp2 = amp2
         self._mean = mean
         self._noise = noise
+        if cholesky is None:
+            self._cov_func = getattr(gp, covarname)
+            self._covar_derivative = getattr(gp, "grad_" + covarname)
+            self._compute_cholesky()
+        else:
+            self._cov_func = cov_func
+            self._covar_derivative =covar_derivative
+            self._L = cholesky
+            self._alpha = alpha
         
-        self._compute_cholesky()
         
     def _compute_cholesky(self):
         #the Cholesky of the correlation matrix
-        self._K = self._compute_covariance(self._X) + self._noise * np.eye(self._X.shape[0])
-        self._L = spla.cholesky(self._K, lower=True)
+        K = self._compute_covariance(self._X) + self._noise * np.eye(self._X.shape[0])
+        self._L = spla.cholesky(K, lower=True)
         self._alpha = spla.cho_solve((self._L, True), self._y - self._mean)
         
     def predict(self, Xstar, variance=False):
@@ -100,7 +115,7 @@ class GPModel(Model):
         cholesky = np.sqrt(self._compute_covariance(x, x) - 
                            np.dot(self._compute_covariance(x, self._X), cholsolve))
         y = self.predict(x,False) + cholesky * omega
-        #y is in the form [[value]]
+        #y is in the form [[value]] (1x1 matrix)
         return y[0][0]
         
     def update(self, x, y):
@@ -130,6 +145,17 @@ class GPModel(Model):
                   np.dot(kXstar.T, cholsolve))
         cholesky = spla.cholesky(Sigma + 1e-6*np.eye(Sigma.shape[0]))
         y = self.predict(Xstar,False) + np.dot(cholesky, omega)
-        #y is in the form [[value]]
         return y
-            
+    
+    def copy(self):
+        '''
+        Returns a copy of this object.
+        Returns:
+            a copy
+        '''
+        X = copy.copy(self._X)
+        y = copy.copy(self._y)
+        ls = copy.copy(self._ls)
+        L = copy.copy(self._L)
+        alpha = self._alpha
+        return GPModel(X, y, self._mean, self._noise, self._amp2, ls, None, L, alpha, self._cov_func, self._covar_derivative)

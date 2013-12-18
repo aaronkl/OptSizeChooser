@@ -9,60 +9,115 @@ Instead of using Expectation Propagation we apply sampling.
 '''
 import numpy as np
 import numpy.random as npr
-import copy
 import support.pmin_discretization as pmin_discretization
+from acquisition_functions.expected_improvement import ExpectedImprovement
 
 '''
 The number of points used to represent/discretize Pmin.
 '''
-NUMBER_OF_REPRESENTER_POINTS = 20
+NUMBER_OF_REPRESENTER_POINTS = 10
 
 '''
 The number of independent samples drawn for one candidate to approximate Pmin.  
 '''
-NUMBER_OF_CAND_SAMPLES = 10
+NUMBER_OF_CAND_SAMPLES = 5
 
 '''
 The number of independent joint samples drawn for the representer points.
 '''
-NUMBER_OF_PMIN_SAMPLES = 10
+NUMBER_OF_PMIN_SAMPLES = 20
+
 
 class EntropySearch():
-    def __init__(self, log_proposal_measure, starting_point):
+        
+    def initialize(self, comp, vals, gp, cost_gp=None):
         '''
         Default constructor.
         Args:
             log_proposal_measure: A function that measures in log-scale how suitable a point is to represent Pmin. 
+            starting_point: A starting point where to start the search for representer points of Pmin.
         '''
         #TODO: Use seed
         self._omega = np.random.normal(0, 1, NUMBER_OF_CAND_SAMPLES)
-        (r, lv) = pmin_discretization.sample_representer_points(starting_point, log_proposal_measure, NUMBER_OF_REPRESENTER_POINTS)
-        self._representers = r
-        self._log_proposal_vals = lv
-    def compute(self, candidate, gp, compute_gradient = False):
+        self._gp = gp
+        self._cost_gp = cost_gp
+        starting_point = comp[np.argmin(vals)]
+        ei = ExpectedImprovement()
+        ei.initialize(comp, vals, gp, cost_gp)
+        def log_proposal_measure(x):
+            if np.any(x<0) or np.any(x>1):
+                return -np.inf
+            v = ei.compute(x)
+            return np.log(v+1e-10)
+        self._log_proposal_measure = log_proposal_measure
+        self._representers = pmin_discretization.sample_representer_points(starting_point, 
+                                                                           self._log_proposal_measure, 
+                                                                           NUMBER_OF_REPRESENTER_POINTS)
+        
+    def compute(self, candidate, compute_gradient = False):
         if compute_gradient:
             raise NotImplementedError("computing gradients not supported by this acquisition function")
-        pmin = np.zeros(len(self._representers))
-        loss = 0
-        
+        gain = 0
+        log_proposal_vals = np.zeros(NUMBER_OF_REPRESENTER_POINTS)
         for o in self._omega:
-            y = gp.sample(candidate,o)
-            gp_copy = copy.deepcopy(gp)
-            gp_copy.update(candidate, y)
-            for s in xrange(0,NUMBER_OF_PMIN_SAMPLES):
-                omega2 = npr.normal(0, 1, NUMBER_OF_REPRESENTER_POINTS) #1-dimensional samples
-                vals = gp_copy.drawJointSample(self._representers, omega2)
-                mins = np.where(vals == vals.min())
-                number_of_mins = len(mins)
-                #mins is a tuple of single valued array
-                for m in mins:
-                    #have to extract the value of the aray
-                    pmin[m[0]] += 1/(number_of_mins)
-            pmin = pmin / NUMBER_OF_PMIN_SAMPLES
-            entropy_pmin = - np.dot(pmin, np.log(pmin+1e-10))
-            log_proposal = np.dot(self._log_proposal_vals, pmin)
+            pmin = self._compute_pmin_bins(self._gp, candidate, o)
+            entropy_pmin = -np.dot(pmin, np.log(pmin+1e-10))
+            #TODO:is it necessary to recompute the proposal measure values of the representer points using the GP copy?
+            for i in range(0, NUMBER_OF_REPRESENTER_POINTS):
+                log_proposal_vals[i] = self._log_proposal_measure(self._representers[i])
+            log_proposal = np.dot(log_proposal_vals, pmin)
             
             kl_divergence = entropy_pmin - log_proposal 
-            loss = loss + kl_divergence
-            
-        return loss
+            gain = gain + kl_divergence
+        return gain
+    
+    def _compute_pmin_bins(self, gp, candidate, omega):
+        '''
+        Computes a discrete belief over Pmin given a Gaussian process using bin method. Leaves
+        the Gaussian process unchanged.
+        Args:
+            gp: the Gaussian process
+            candidate: the current candidate
+            omega: a sample of the standard normal
+        Returns:
+            a numpy array with a probability for each representer point
+        '''
+        y = gp.sample(candidate,omega)
+        gp_copy = gp.copy()
+        gp_copy.update(candidate, y)
+        pmin = np.zeros(NUMBER_OF_REPRESENTER_POINTS)
+        for s in xrange(0,NUMBER_OF_PMIN_SAMPLES):
+            omega2 = npr.normal(0, 1, NUMBER_OF_REPRESENTER_POINTS) #1-dimensional samples
+            vals = gp.drawJointSample(self._representers, omega2)
+            mins = np.where(vals == vals.min())
+            number_of_mins = len(mins)
+            #mins is a tuple of single valued array
+            for m in mins:
+                #have to extract the value of the array
+                pmin[m[0]] += 1/(number_of_mins)
+        pmin = pmin / NUMBER_OF_PMIN_SAMPLES
+        return pmin
+    
+    def _compute_pmin_kde(self, gp):
+        #FIXME: INCORRECT
+        '''
+        Computes a discrete belief over Pmin given a Gaussian process using kernel density estimator.
+        Args:
+            gp: the Gaussian process
+        Returns:
+            a numpy array with a probability for each representer point
+        '''
+        pmin = np.zeros(len(self._representers))
+        for s in xrange(0,NUMBER_OF_PMIN_SAMPLES):
+            omega2 = npr.normal(0, 1, NUMBER_OF_REPRESENTER_POINTS) #1-dimensional samples
+            vals = gp.drawJointSample(self._representers, omega2)
+            mins = np.where(vals == vals.min())
+            number_of_mins = len(mins)
+            for i in range(0, NUMBER_OF_REPRESENTER_POINTS):
+                for m in mins:
+                    covar = gp._compute_covariance(np.array([self._representers[i]]), np.array([self._representers[m[0]]]))
+                    covar = covar / number_of_mins
+                    covar = covar / gp._amp2
+                    pmin[i]+=covar
+        pmin = pmin / NUMBER_OF_PMIN_SAMPLES
+        return pmin
