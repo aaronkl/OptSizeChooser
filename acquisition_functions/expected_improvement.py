@@ -9,7 +9,7 @@ import scipy.stats    as sps
 
 
 class ExpectedImprovement():
-    def initialize(self, comp, vals, gp, cost_gp=None):
+    def __init__(self, comp, vals, gp, cost_gp=None):
         '''
         Constructor
         '''
@@ -39,10 +39,11 @@ class ExpectedImprovement():
         # this is the result after some simplifications
         grad = npdf * sg + ncdf * mg
         
+        amp2 = self._gp.getAmplitude()
         #TODO: For which reason ever grad deviates from the spear mint grad by a factor of 2!
         #So, since we assume the spear mint implementation as correct (which might be wrong
         #in this case) we divide by 2 here.
-        return (ei, grad[0]/2)
+        return (ei, amp2 * grad[0]/2)
     
     
     def compute_with_prediction(self, func_m, func_v):

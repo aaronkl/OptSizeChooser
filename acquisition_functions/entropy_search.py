@@ -27,33 +27,27 @@ The number of independent joint samples drawn for the representer points.
 '''
 NUMBER_OF_PMIN_SAMPLES = 20
 
-
 class EntropySearch():
-        
-    def initialize(self, comp, vals, gp, cost_gp=None):
+    def __init__(self, comp, vals, gp, cost_gp=None):
         '''
         Default constructor.
-        Args:
-            log_proposal_measure: A function that measures in log-scale how suitable a point is to represent Pmin. 
-            starting_point: A starting point where to start the search for representer points of Pmin.
-        '''
+        '''    
         #TODO: Use seed
         self._omega = np.random.normal(0, 1, NUMBER_OF_CAND_SAMPLES)
         self._gp = gp
         self._cost_gp = cost_gp
         starting_point = comp[np.argmin(vals)]
-        ei = ExpectedImprovement()
-        ei.initialize(comp, vals, gp, cost_gp)
-        def log_proposal_measure(x):
-            if np.any(x<0) or np.any(x>1):
-                return -np.inf
-            v = ei.compute(x)
-            return np.log(v+1e-10)
-        self._log_proposal_measure = log_proposal_measure
+        self._ei = ExpectedImprovement(comp, vals, gp, cost_gp)
         self._representers = pmin_discretization.sample_representer_points(starting_point, 
                                                                            self._log_proposal_measure, 
                                                                            NUMBER_OF_REPRESENTER_POINTS)
         
+    def _log_proposal_measure(self, x):
+        if np.any(x<0) or np.any(x>1):
+            return -np.inf
+        v = self._ei.compute(x)
+        return np.log(v+1e-10)
+
     def compute(self, candidate, compute_gradient = False):
         if compute_gradient:
             raise NotImplementedError("computing gradients not supported by this acquisition function")

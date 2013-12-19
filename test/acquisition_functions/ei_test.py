@@ -3,44 +3,22 @@ Created on Oct 29, 2013
 
 @author: Simon Bartels
 '''
+from test.abstract_test import AbstractTest, d, scale
 import unittest
 import numpy as np
 import scipy.linalg as spla
-import gp
 import numpy.random as npr
 import scipy.stats as sps
-from test.util import *
-from model.gp import gp_model_factory
-from support.expected_improvement import expected_improvement
+from test.util import cov
+from acquisition_functions.expected_improvement import ExpectedImprovement
 
-d = 2
-scale = 25
-
-#TODO: us EI acquisition function for testing!
-
-class Test(unittest.TestCase):
-
-
-    def setUp(self):
-        self.random_state = npr.get_state()
-        mf = gp_model_factory.GPModelFactory()
-        (X, y) = makeObservations(d, scale)
-        self.X = X
-        self.y = y
-        self.gp = mf.create(X, y)
-        copy_parameters(self, self.gp)
-
-
-    def tearDown(self):
-        pass
-
+class Test(AbstractTest):
 
     def testEI(self):
-        incumbent = np.min(self.y)
         Xstar = np.array([scale * npr.randn(d)])
-        ei = expected_improvement(self.gp, incumbent, Xstar, gradient=False)[0]
+        ei = ExpectedImprovement(self.X, self.y, self.gp, None)
         ei_sp = self._ei_spear_mint(Xstar, self.X, self.y, compute_grad=False)[0]
-        assert(abs(ei-ei_sp) < 0.01)
+        assert(abs(ei.compute(Xstar[0], False)-ei_sp) < 1e-50)
     
     def _ei_spear_mint(self, cand, comp, vals, compute_grad=True):
         """
@@ -91,12 +69,11 @@ class Test(unittest.TestCase):
         return ei, grad_xp[0]
     
     def testGradientEI(self):
-        incumbent = np.min(self.y)
         xstar = np.array([scale * npr.randn(d)])
-        ei = expected_improvement(self.gp, incumbent, xstar, gradient=True)[1]
+        ei = ExpectedImprovement(self.X, self.y, self.gp, None)
         ei_sp = self._ei_spear_mint(xstar, self.X, self.y, compute_grad=True)[1]
-        print (ei, ei_sp)
-        assert(spla.norm(ei-ei_sp) < 1e-50)
+        grad_ei = ei.compute(xstar[0], True)[1]
+        assert(spla.norm(grad_ei-ei_sp) < 1e-50)
 
 
 

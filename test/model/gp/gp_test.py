@@ -3,39 +3,16 @@ Created on Oct 29, 2013
 
 @author: Simon Bartels
 '''
+from test.abstract_test import AbstractTest, d, scale
 import unittest
 import numpy as np
 import scipy.linalg as spla
-import gp
 import numpy.random as npr
-from test.util import *
-from model.gp import gp_model_factory
-import copy
+from test.util import cov
 
-'''
-The number of input dimensions for the Gaussian Process.
-'''
-d = 2
-
-'''
-Scale/distribution of the inputs, i.e. factor to the normal distribution.
-'''
-scale = 25
-
-class Test(unittest.TestCase):
-    def setUp(self):
-        self.random_state = npr.get_state()
-        #print "random state:"
-        #print self.random_state
-        mf = gp_model_factory.GPModelFactory()
-        (X, y) = makeObservations(d, scale)
-        self.X = X
-        self.y = y
-        self.gp = mf.create(X, y)
-        copy_parameters(self, self.gp)
-
-    def tearDown(self):
-        pass
+class Test(AbstractTest):
+    #def setUp(self):
+    # in super class
     
     def testPredict(self):
         '''
@@ -88,8 +65,6 @@ class Test(unittest.TestCase):
                 (obsv_chol, True), cand_cross).transpose(), grad_cross)
                
         (mg,mv) = self.gp.getGradients(xstar[0])
-        #print (mg, grad_xp_m)
-        #print (mv, grad_xp_v)
         assert(spla.norm(mg - grad_xp_m) < 1e-50)
         assert(spla.norm(mv[0] - grad_xp_v[0]) < 1e-50)
         
@@ -108,7 +83,7 @@ class Test(unittest.TestCase):
             self.gp.update(Xstar[i], y1[i])
         #the naive procedure is numerically unstable
         #that's why we tolerate a higher error here
-        assert(spla.norm(y1 - y2) < 1e-10)
+        assert(spla.norm(y1 - y2) < 1e-5)
         
     def testCopy(self):
         '''

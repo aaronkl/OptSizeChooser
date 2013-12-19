@@ -25,71 +25,19 @@ def init(expt_dir, arg_string):
     args = util.unpack_args(arg_string)
     return OptSizeChooser(expt_dir, **args)
 
-def _apply_acquisition_function_asynchronously(ac_func, models, cost_models, cand, comp, vals, pool_size=16):
-    '''
-    Applies the given acquisition function over all candidates for each model in parallel.
-    Calls _iterate_over_candidates for that purpose.
-    Multiprocessing can only call functions that are pickable. Thus these method must be at the top level 
-    of a class. This is the workaround.
-    Args:
-        ac_func: the acquisition function (will be initialized)
-        models: a list of models
-        cost_models: OPTIONAL. will only be used if the length of the list is equal to the length of the list of models
-        cand: a list of candidates to iterate over
-        comp: a list of points where the objective function has been evaluated so far
-        vals: the values that have been observed corresponding to comp
-        pool_size: the number of worker threads to use
-    Returns:
-        a numpy vector of values, one entry for each entry in cand
-    '''
-    model_costs = len(models) == len(cost_models)
-    
-    #Prepare multiprocessing
-    log("going to use " + str(pool_size)  + " worker threads")
-    pool = Pool(pool_size)
-    results = []
-    cost_gp = None
-    #Create a GP for each hyper-parameter sample
-    for m in range(0, len(models)-1):
-        if model_costs:
-            cost_gp = cost_models[m]
-        
-        #Iterate over all candidates for each GP in parallel
-        #apparently the last , needs to be there
-        results.append(pool.apply_async(_iterate_over_candidates, (ac_func, models[m], cost_gp, cand, comp, vals,)))
-    pool.close()
-    pool.join()
-    
-    overall_ac_value = np.zeros(len(cand))   
-    #get results
-    for res in results:
-        res.wait()
-        try:
-            ac_vals = res.get()
-            overall_ac_value+=ac_vals
-        except Exception, ex:
-            log("Worker Thread reported exception:" + str(ex) + "\n Action: ignoring result")
-    return overall_ac_value
-
-def _iterate_over_candidates(ac_func, gp, cost_gp, cand, comp, vals):
+def _iterate_over_candidates(ac_func, cand):
     '''
     Is called by _apply_acquisition_function_asynchronously. Multiprocessing can only call functions that 
     are pickable. Thus these method must be at the top level of a class. This is the workaround.
     Args:
-        ac_func: the acquisition func (will be initialized)
-        gp: a gaussian process
+        ac_func: the acquisition function
         cand: the set of candidate points
-        vals: all values of the objective function that have been observed so far (NOT necessarily of the 
-        candidates!) 
-        starting_point: a start point to maximize the acquisition function (for example the current best)
     Returns:
         an array of acquisition function values (for each candidate one value)
     '''
     try:
         #This is what we want to distribute over different processes
         #We'll iterate over all candidates for each GP in a different thread
-        
-        ac_func.initialize(comp, vals, gp, cost_gp)
         ac_values = np.zeros(len(cand))
         #Iterate over all candidates
         for i in xrange(0, len(cand)):
@@ -99,7 +47,24 @@ def _iterate_over_candidates(ac_func, gp, cost_gp, cand, comp, vals):
     except Exception, e: 
         print traceback.format_exc()
         raise e
+    
+def _call_minimizer(cand, func, arguments, opt_bounds):
+    '''
+    This function is also desgined to be called in parallel. It calls a minmizer with the given argument.
+    Args:
+        cand: the starting point for the minimizer
+        func: the function to be minimized
+        arguments: for func
+        opt_bounds: the optimization bounds
+    Returns:
+        a triple consisting of the point, the value and the gradients
         
+    '''
+    try:
+        return spo.fmin_l_bfgs_b(func, cand.flatten(), args=arguments, bounds=opt_bounds, disp=0)
+    except Exception, e: 
+        print traceback.format_exc()
+        raise e
 
 class OptSizeChooser():
     def __init__(self, expt_dir, covar="Matern52", mcmc_iters=10,
@@ -156,8 +121,6 @@ class OptSizeChooser():
                                                                                  self._cost_cov_func, noise, amp2, 
                                                                                  ls)
 
-        
-
     def next(self, grid, values, durations, candidates, pending, complete):
         comp = grid[complete,:]
         if comp.shape[0] < 2:
@@ -175,14 +138,15 @@ class OptSizeChooser():
                
         cand = grid[candidates,:]
         if self._do_local_search:
-            ei = ExpectedImprovement()
+            #TODO: generalize
+            ei = ExpectedImprovement
             cand = _preselect_candidates(NUMBER_OF_CANDIDATES, cand, comp, vals, models, cost_models, ei)
     
         #TODO: generalize!
-        ac_func = EntropySearch()
+        ac_func = EntropySearch
+        ac_funcs = _initialize_acquisition_functions(ac_func, comp, vals, models, cost_models)
         #overall results of the acquisition functions for each candidate over all models
-        overall_ac_value = _apply_acquisition_function_asynchronously(ac_func, models, cost_models, cand, comp, 
-                                                                      vals, self.grid_subset)
+        overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, self.grid_subset)
             
         best_cand = np.argmax(overall_ac_value)
         if self._do_local_search:
@@ -229,6 +193,64 @@ class OptSizeChooser():
                 cost_gp = GPModel(comp, durs, cost_hyper[0], cost_hyper[1], cost_hyper[2], cost_hyper[3])
                 cost_models.append(cost_gp)
         return (models, cost_models)
+    
+def _initialize_acquisition_functions(ac_func, comp, vals, models, cost_models):
+    '''
+    Initializes an acquisition function for each model.
+    Args:
+        ac_func: an (UNINITIALIZED) acquisition function
+        comp: the points where the objective function has been evaluated so far
+        vals: the corresponding observed values
+        models: a list of models
+        cost_models: OPTIONAL. will only be used if the length of the list is equal to the length of the list of models
+     Returns:
+         a list of initialized acquisition functions
+    '''
+    model_costs = len(models) == len(cost_models)
+    cost_model = None
+    ac_funcs = []
+    for i in range(0, len(models)):
+        if model_costs:
+            cost_model = cost_models[i]
+        ac_funcs.append(ac_func(comp, vals, models[i], cost_model))
+    return ac_funcs
+    
+def _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size=16):
+    '''
+    Applies the given acquisition function over all candidates for each model in parallel.
+    Calls _iterate_over_candidates for that purpose.
+    Args:
+        ac_func: the acquisition function (will be initialized)
+        models: a list of models
+        cost_models: OPTIONAL. will only be used if the length of the list is equal to the length of the list of models
+        cand: a list of candidates to iterate over
+        pool_size: the number of worker threads to use
+    Returns:
+        a numpy vector of values, one entry for each entry in cand
+    '''
+    
+    #Prepare multiprocessing
+    log("going to use " + str(pool_size)  + " worker threads")
+    pool = Pool(pool_size)
+    results = []
+    #Create a GP for each hyper-parameter sample
+    for acf in ac_funcs:
+        #Iterate over all candidates for each GP in parallel
+        #apparently the last , needs to be there
+        results.append(pool.apply_async(_iterate_over_candidates, (acf, cand,)))
+    pool.close()
+    pool.join()
+    
+    overall_ac_value = np.zeros(len(cand))   
+    #get results
+    for res in results:
+        res.wait()
+        try:
+            ac_vals = res.get()
+            overall_ac_value+=ac_vals
+        except Exception, ex:
+            log("Worker Thread reported exception:" + str(ex) + "\n Action: ignoring result")
+    return overall_ac_value
                 
 def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, cost_models, ac_func):
     '''
@@ -246,40 +268,52 @@ def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, 
         A numpy matrix consisting of the number_of_points_to_return best points 
         
     '''
-    overall_ac_value = _apply_acquisition_function_asynchronously(ac_func, models, cost_models, cand, comp, vals)
-    #TODO: use local optimization
-    #np.random.randn(10,comp.shape[1])*0.001 + current_best
-    best_cands = cand[overall_ac_value.argsort()[-number_of_points_to_return:][::-1], :]
+    ac_funcs = _initialize_acquisition_functions(ac_func, comp, vals, models, cost_models)
+    overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand)
+    best_cands_indices = overall_ac_value.argsort()[-number_of_points_to_return:][::-1]
+    best_cands = cand[best_cands_indices, :]
 
-#     locally_optimized = np.zeros(best_cands.shape)
-#     opt_bounds = []# optimization bounds
-#     for i in xrange(0, best_cands.shape[1]):
-#         opt_bounds.append((0, 1))
-#         
-#     dimension = (-1, best_cands.shape[1])
-#     #TODO: maybe parallelize
-#     for i in range(0, best_cands.shape[0]):
-#         locally_optimized[i] = spo.fmin_l_bfgs_b(_optimize_over_hypers,
-#                             best_cands[i].flatten(), args=(ac_func, models, cost_models, comp, vals, dimension),
-#                             bounds=opt_bounds, disp=0)[0]
+    locally_optimized = np.zeros(best_cands.shape)
+    opt_bounds = []# optimization bounds
+    for i in xrange(0, best_cands.shape[1]):
+        opt_bounds.append((0, 1))
+    dimension = (-1, cand.shape[0])
+    
+    pool_size = 16 #TODO: generalize
+    log("going to use " + str(pool_size)  + " worker threads")
+    pool = Pool(pool_size)
+    #call minimizer in parallel
+    results = [pool.apply_async(_call_minimizer, (best_cands[i], _compute_ac_gradient_over_hypers, 
+                                                  (ac_funcs, dimension), opt_bounds)) 
+               for i in range(0, best_cands.shape[0])]
+    pool.close()
+    pool.join()
+    
+    for i in range(0, best_cands.shape[0]):
+        res = results[i]
+        res.wait()
+        try:
+            p = res.get()[0]
+            locally_optimized[i] = p
+        except Exception, ex:
+            log("Worker Thread reported exception:" + str(ex) + "\n Action: ignoring result")
                             
     #return the NUMBER_OF_CANDIDATES best candidates
-    #TODO: return locally_optimized
-    return best_cands
-
-def _optimize_over_hypers(x, acquisition_function, models, cost_models, comp, vals, dimension):
-    #FIXME: broken
-    x = x[0] #for which reason ever, x is is of the form [vector]
+    return locally_optimized
+    
+def _compute_ac_gradient_over_hypers(x, acquisition_functions, dimension):
+    '''
+    Computes value and gradient of all acquisition functions in the list for one candidate.
+    Args:
+        x: the candidate
+        acquisition_functions: a list of INITIALIZED acquisition functions
+        dimension: how to reshape the candidate
+    '''
     grad_sum = np.zeros(x.shape).flatten()
-    x = np.reshape(x, dimension)
-    use_cost_models = len(cost_models) == len(models)
-    cost_model = None
+    #x = np.reshape(x, dimension)
     val_sum = 0
-    for i in range(0, len(models)-1):
-        if use_cost_models:
-            cost_model = cost_models[i]
-        acquisition_function.initialize(comp, vals, models[i], cost_model)
-        (val, grad) = acquisition_function.compute(x, True)
+    for acf in acquisition_functions:
+        (val, grad) = acf.compute(x, True)
         val_sum+=val
-        grad_sum+=grad
-    return (val_sum, grad_sum.flatten())
+        grad_sum+=grad.flatten()
+    return (-val_sum, grad_sum)

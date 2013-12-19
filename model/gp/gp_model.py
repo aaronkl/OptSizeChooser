@@ -102,6 +102,9 @@ class GPModel(Model):
 
     def getNoise(self):
         return self._noise
+    
+    def getAmplitude(self):
+        return self._amp2
         
     def sample(self, x, omega):
         '''

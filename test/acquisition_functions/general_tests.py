@@ -26,6 +26,12 @@ class Test(unittest.TestCase):
         '''
         #TODO: Implement
         raise NotImplementedError("TODO: Implement")
+    
+    def test_reentrant(self):
+        '''
+        Tests that the acquisition functions can be used in parallel.
+        '''
+        #TODO: implement
 
 
 if __name__ == "__main__":
