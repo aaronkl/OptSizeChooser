@@ -34,10 +34,18 @@ class ExpectedImprovement():
         #TODO: This is actually a bit inefficient, since getGradient computes the variance again
         #which we already have here!
         (mg, vg) = self._gp.getGradients(candidate)
+        #v'(x)=(s^2(x))'=2 s(x) s'(x) => s'(x)= v'(x)/(2*func_s)
         sg = 0.5 * vg / func_s #we want the gradient of s(x) not of s^2(x)
         
-        # this is the result after some simplifications
-        grad = npdf * sg + ncdf * mg
+        #This is what Marcus Frean and Philipp Boyle propose in
+        # "Using Gaussian Processes to Optimize Expensive Functions."
+        #TODO: I'm not absolutely sure about the sign before mg. But it makes sense.
+        #grad = (u*ncdf + npdf)*sg + func_s*ncdf*(-mg-u*sg)/func_s
+        # = u*ncdf*sg +npdf*sg -ncdf*mg -u*ncdf*sg
+        # = npdf * sg - ncdf * mg
+        grad = npdf * sg - ncdf * mg
+        #Spearmint in comparison: 
+        #grad_xp = 0.5 * self.amp2 * (grad_xp_m * -ncdf + grad_xp_v * 0.5 * npdf / func_s)
         
         amp2 = self._gp.getAmplitude()
         #TODO: For which reason ever grad deviates from the spear mint grad by a factor of 2!

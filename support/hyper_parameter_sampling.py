@@ -18,15 +18,16 @@ AMP2_SCALE  = 1    # zero-mean log normal prior
 MAX_LS      = 10    # top-hat prior on length scales
 
 def _sample_mean_amp_noise(comp, vals, cov_func, start_point, ls):
-    noise = 1e-3
+    default_noise = 1e-3
     #if we get a start point that consists only of two variables that means we don't care for the noise
     noiseless = (start_point.shape[0] == 2)
-    
     def logprob(hypers):
         mean = hypers[0]
         amp2 = hypers[1]
         if not noiseless:
             noise = hypers[2]
+        else:
+            noise = default_noise
 
         # This is pretty hacky, but keeps things sane.
         if mean > np.max(vals) or mean < np.min(vals):
@@ -87,8 +88,8 @@ def sample_hyperparameters(mcmc_iters, noiseless, input_points, func_values, cov
     # sample hyper parameters
     for i in xrange(0, mcmc_iters ):
         if noiseless:
-            [mean, amp2] = _sample_mean_amp_noise(input_points, func_values, cov_func, np.array([mean, amp2]), ls )
             noise = 1e-3
+            [mean, amp2] = _sample_mean_amp_noise(input_points, func_values, cov_func, np.array([mean, amp2]), ls )
         else:
             [mean, amp2, noise] =_sample_mean_amp_noise(input_points, func_values, cov_func, np.array([mean, amp2, noise]), ls)
         ls = _sample_ls(input_points, func_values, cov_func, ls, mean, amp2, noise)

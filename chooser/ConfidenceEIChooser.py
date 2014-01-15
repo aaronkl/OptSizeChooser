@@ -6,11 +6,10 @@ Created on Oct 28, 2013
 This class implements the augmented criterion as presented in
 "Global Optimization of Stochastic Black-Box Systems via Sequential Kriging Meta-Models"
 '''
-
+#TOD: REFACTOR!
 import numpy as np
 import scipy.optimize as spo
 import scipy.stats    as sps
-import support.expected_improvement as ei_calc
 import util
 from model.gp.gp_model_factory import GPModelFactory
 

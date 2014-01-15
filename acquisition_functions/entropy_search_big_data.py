@@ -3,7 +3,7 @@ Created on 02.12.2013
 
 @author: Aaron Klein, Simon Bartels
 
-This class extends EntropySearch to be used for big data sets. I.e. it incorportes the cost models
+This class extends EntropySearch to be used for big data sets. I.e. it incorporates the cost models
 and it ASSUMES that the first value of a point is the data set size.
 '''
 import numpy as np
@@ -20,7 +20,7 @@ class EntropySearchBigData(EntropySearch):
         self._omega = np.random.normal(0, 1, NUMBER_OF_CAND_SAMPLES)
         self._gp = gp
         self._cost_gp = cost_gp
-        starting_point = comp[np.argmin(vals)][1,] #we don't want to slice sample over the first value
+        starting_point = np.array([comp[np.argmin(vals)][1,]]) #we don't want to slice sample over the first value
         self._ei = ExpectedImprovement(comp, vals, gp, cost_gp)
         self._representers = pmin_discretization.sample_representer_points(starting_point, 
                                                                            self._log_proposal_measure, 

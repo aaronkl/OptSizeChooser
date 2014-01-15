@@ -3,13 +3,12 @@ Created on Oct 29, 2013
 
 @author: Simon Bartels
 '''
-from test.abstract_test import AbstractTest, d, scale
+from test.abstract_test import AbstractTest, d, scale, cov
 import unittest
 import numpy as np
 import scipy.linalg as spla
 import numpy.random as npr
 import scipy.stats as sps
-from test.util import cov
 from acquisition_functions.expected_improvement import ExpectedImprovement
 
 class Test(AbstractTest):
@@ -18,7 +17,9 @@ class Test(AbstractTest):
         Xstar = np.array([scale * npr.randn(d)])
         ei = ExpectedImprovement(self.X, self.y, self.gp, None)
         ei_sp = self._ei_spear_mint(Xstar, self.X, self.y, compute_grad=False)[0]
-        assert(abs(ei.compute(Xstar[0], False)-ei_sp) < 1e-50)
+        ei_val = ei.compute(Xstar[0], False)
+        print str(ei_sp) + "=" + str(ei_val)
+        assert(abs(ei_val-ei_sp) < 1e-50)
     
     def _ei_spear_mint(self, cand, comp, vals, compute_grad=True):
         """
@@ -69,11 +70,17 @@ class Test(AbstractTest):
         return ei, grad_xp[0]
     
     def testGradientEI(self):
-        xstar = np.array([scale * npr.randn(d)])
+        xstar = scale * npr.random((1,d))
         ei = ExpectedImprovement(self.X, self.y, self.gp, None)
-        ei_sp = self._ei_spear_mint(xstar, self.X, self.y, compute_grad=True)[1]
+        grad_ei_sp = self._ei_spear_mint(xstar, self.X, self.y, compute_grad=True)[1]
         grad_ei = ei.compute(xstar[0], True)[1]
-        assert(spla.norm(grad_ei-ei_sp) < 1e-50)
+        
+        print str(grad_ei_sp) + "=" + str(grad_ei)
+        def f(x):
+            return ei.compute(x, False)
+        self.assert_first_order_gradient_approximation(f, xstar[0], grad_ei, 1e-13)
+        assert(spla.norm(grad_ei-grad_ei_sp) < 1e-50)
+            
 
 
 

@@ -27,7 +27,7 @@ The number of independent joint samples drawn for the representer points.
 '''
 NUMBER_OF_PMIN_SAMPLES = 20
 
-class EntropySearch():
+class EntropySearch(object):
     def __init__(self, comp, vals, gp, cost_gp=None):
         '''
         Default constructor.

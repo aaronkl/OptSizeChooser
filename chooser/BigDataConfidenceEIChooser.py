@@ -10,12 +10,10 @@ This class implements the augmented criterion as presented in
 import numpy as np
 import scipy.optimize as spo
 import scipy.stats    as sps
-import support.expected_improvement as ei_calc
 import util
-from model.gp.model_factory import GPModelFactory
 from chooser.ConfidenceEIChooser import ConfidenceEIChooser
 
-
+#TODO: REFACTOR!
 def init(expt_dir, arg_string):
     args = util.unpack_args(arg_string)
     return BigDataConfidenceEIChooser(expt_dir, **args)

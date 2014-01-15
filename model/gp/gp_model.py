@@ -1,7 +1,7 @@
 '''
 Created on Oct 28, 2013
 
-@author: Simon Bartels
+@author: Simon Bartels, Aaron Klein
 '''
 
 import gp
@@ -10,12 +10,27 @@ import scipy.linalg as spla
 from ..model import Model
 import copy
 
+def grad_Polynomial3(ls, x1, x2=None):
+    raise NotImplementedError("grad_Polynomial3 has not been implemented yet")
+
+def Polynomial3(ls, x1, x2=None, grad=False):
+    #FIXME: is this wrong or just numerically unstable?
+    x1 = x1 / ls
+    if x2 is None:
+        x2=x1
+    else:
+        x2=x2/ls
+    #because x1 is NxD matrix and not DxN we transpose the second entry
+    cov = np.dot(x1, x2.T) ** 3
+    if grad:
+        grad_cov = grad_Polynomial3(ls,x1,x2)
+        return (cov, grad_cov)
+    return cov
 
 
 class GPModel(Model):
 
     def __init__(self, X, y, mean, noise, amp2, ls, covarname="Matern52", cholesky=None, alpha=None, cov_func = None, covar_derivative=None):
-        #TODO: just a stub
         '''
             Constructor
             Args:
@@ -39,8 +54,14 @@ class GPModel(Model):
         self._mean = mean
         self._noise = noise
         if cholesky is None:
-            self._cov_func = getattr(gp, covarname)
-            self._covar_derivative = getattr(gp, "grad_" + covarname)
+            try:
+                #try to find covariance function in spearmint GP class
+                self._cov_func = getattr(gp, covarname)
+                self._covar_derivative = getattr(gp, "grad_" + covarname)
+            except _:
+                #try to find covariance funtion in THIS class
+                self._cov_func = globals()[covarname]
+                self._covar_derivative = globals()["grad_" + covarname]
             self._compute_cholesky()
         else:
             self._cov_func = cov_func
@@ -79,26 +100,29 @@ class GPModel(Model):
     def getGradients(self, xstar):
         xstar = np.array([xstar])
         # gradient of mean
-        # dk(X,x*) / dx
-        dk = self._amp2 * self._covar_derivative(self._ls, self._X, xstar)
-        dk = np.squeeze(dk)
-        #If dk is written like below, there's no need to squeeze.
-        #But we stick to spear mint as close as possible.
-        #Seems like the version below has a different sign!
+        #This is what Andrew McHutchon in "Differentiating Gaussian Processes"
+        #proposes. 
         #dk = self._amp2 * self._covar_derivative(self._ls, xstar, self._X)[0]
+        #grad_m = np.dot(dk.T, self._alpha)
+        #The sign of the version above agrees with the first order approximation.
+        #The spearmint implementation not.
+        #THEREFORE WE TURN THE SIGN OF DK! BEWARE: Also used for grad_v!!!
+        # Below is the code how spear mint does it.
+        dk = -self._amp2 * self._covar_derivative(self._ls, self._X, xstar)
+        dk = np.squeeze(dk)
         grad_m = np.dot(self._alpha.T, dk)
         
-        # gradient of variance
+        # gradient of variance    
+        #intuitively k should be cov(xstar,X) but that gives a row vector!
         k = self._compute_covariance(self._X, xstar)
         #kK = k^T * K^-1
         kK = spla.cho_solve((self._L, True), k)
-        #kK^Tdk=s'(x). So for the derivative of v(x) in terms of s(x) we have:
+        #s'(x)=-dk^T kK /s(x). So for the derivative of v(x) in terms of s(x) we have:
         #v(x)=s^2(x) <=> v'(x)=2s(x)*s'(x)
         grad_v = -2 * np.dot(kK.T, dk)
         #As in spear mint grad_v is of the form [[v1, v2, ...]]
         #TODO: Check if this is really necessary. Seems dirty.
-        #TODO: Apparently the sign of the mean gradient is wrong!
-        return (-grad_m, grad_v)
+        return (grad_m, grad_v)
 
     def getNoise(self):
         return self._noise
