@@ -11,21 +11,62 @@ from ..model import Model
 import copy
 
 def grad_Polynomial3(ls, x1, x2=None):
-    raise NotImplementedError("grad_Polynomial3 has not been implemented yet")
-
-def Polynomial3(ls, x1, x2=None, grad=False):
-    #FIXME: is this wrong or just numerically unstable?
-    x1 = x1 / ls
+    raise NotImplementedError("Not implemented!")
+    #ls_ = ls[1:]
+    x1 = x1 #/ ls_
     if x2 is None:
         x2=x1
     else:
-        x2=x2/ls
+        x2=x2#/ls_
+    #TODO: this is wrong!
+    return ls[0] * 3 * (np.dot(x1, x2.T) + ls[0]) ** 2
+
+def Polynomial3(ls, x1, x2=None, grad=False):
+    #FIXME: is this function wrong or just numerically unstable?
+    #first length scale parameter is for offset
+    #ls_ = ls[1:]
+    x1 = x1 #/ ls_
+    if x2 is None:
+        x2=x1
+    else:
+        x2=x2#/ls_
     #because x1 is NxD matrix and not DxN we transpose the second entry
-    cov = np.dot(x1, x2.T) ** 3
+    cov = (np.dot(x1, x2.T) + ls[0]) ** 3
     if grad:
         grad_cov = grad_Polynomial3(ls,x1,x2)
         return (cov, grad_cov)
     return cov
+
+def grad_BigData(ls,x1,x2=None):
+    raise NotImplementedError("Not implemented!")
+
+def BigData(ls, x1, x2=None, grad=False):
+    if grad:
+        raise NotImplementedError("Not implemented!")
+    return Polynomial3(ls[:1], x1, x2, grad)*gp.Matern52(ls[1:], x1, x2, grad)
+
+def getNumberOfParameters(covarname, input_dimension):
+    '''
+    Returns the number of parameters the kernel has.
+    Args:
+        covarname: the name of the covariance function
+        input_dimension: dimensionality of the input arguments
+    Returns:
+        the number of parameters
+    '''
+    try:
+        #try to find covariance function in spearmint GP class
+        getattr(gp, covarname)
+        #then it is just the input dimension
+        return input_dimension
+    except:
+        if covarname == 'Polynomial3':
+            return 1
+        elif covarname == 'BigData':
+            return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Polynomial3', input_dimension-1)
+        else:
+            raise NotImplementedError('The given covariance function (' + covarname + 'was not found.')
+        
 
 
 class GPModel(Model):
@@ -58,7 +99,7 @@ class GPModel(Model):
                 #try to find covariance function in spearmint GP class
                 self._cov_func = getattr(gp, covarname)
                 self._covar_derivative = getattr(gp, "grad_" + covarname)
-            except _:
+            except:
                 #try to find covariance funtion in THIS class
                 self._cov_func = globals()[covarname]
                 self._covar_derivative = globals()["grad_" + covarname]

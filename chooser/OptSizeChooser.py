@@ -16,7 +16,7 @@ from multiprocessing import Pool
 from support.hyper_parameter_sampling import sample_hyperparameters
 import traceback
 from helpers import log
-from model.gp.gp_model import Polynomial3
+from model.gp.gp_model import BigData, getNumberOfParameters
 
 '''
 The number of candidates if using local search.
@@ -75,6 +75,9 @@ class OptSizeChooser(object):
         '''
         Constructor
         '''
+        seed = np.random.randint(65000)
+        log("using seed: " + str(seed))
+        np.random.seed(seed)
         self._mcmc_iters = mcmc_iters
         self._noiseless = noiseless
         self._burnin = burnin
@@ -86,15 +89,13 @@ class OptSizeChooser(object):
         self._covar = covar
         self._cov_func = getattr(gp, covar)
         self._covar_derivative = getattr(gp, "grad_" + covar)
-        #TODO: set cost covariance function
-        #self._cost_covar = 'Polynomial3'
-        #self._cost_cov_func = Polynomial3
+        self._cost_covar = 'BigData'
+        self._cost_cov_func = BigData
         self._cost_covar = covar
         self._cost_cov_func = self._cov_func
         self._is_initialized = False
         self._do_local_search = True
-        #TODO: set to true
-        self._model_costs = False
+        self._model_costs = True
 
     def _real_init(self, dims, comp, values, durations):
         '''
@@ -108,7 +109,7 @@ class OptSizeChooser(object):
         self._is_initialized = True
 
         # Initial length scales.
-        ls = np.ones(dims)
+        ls = np.ones(getNumberOfParameters(self._covar, dims))
 
         # Initial amplitude.
         amp2 = np.std(values)+1e-4
@@ -122,6 +123,7 @@ class OptSizeChooser(object):
         
         if self._model_costs:
             amp2 = np.std(durations)+1e-4
+            ls = np.ones(getNumberOfParameters(self._covar, dims))
             #burn in for the cost models
             self._cost_function_hyper_parameter_samples = sample_hyperparameters(self._burnin, self._noiseless, 
                                                                                  comp, durations, 
@@ -130,6 +132,7 @@ class OptSizeChooser(object):
 
     def next(self, grid, values, durations, candidates, pending, complete):
         comp = grid[complete,:]
+        #TODO: find good initialization procedure!
         if comp.shape[0] < 2:
             return candidates[0]
                 
@@ -148,6 +151,9 @@ class OptSizeChooser(object):
 
         #initialize Gaussian processes
         (models, cost_models) = self._initialize_models(comp, vals, durs)
+#         import support.Visualizer as vis
+#         vis.plot2DFunction(lambda x: models[len(models)-1].predict(x))
+#         vis.plot2DFunction(lambda x: cost_models[len(cost_models)-1].predict(x))
                
         cand = grid[candidates,:]
         if self._do_local_search:
@@ -156,7 +162,7 @@ class OptSizeChooser(object):
             cand = _preselect_candidates(NUMBER_OF_CANDIDATES, cand, comp, vals, models, cost_models, ei)
     
         #TODO: generalize!
-        ac_func = EntropySearch#BigData
+        ac_func = EntropySearchBigData
         ac_funcs = _initialize_acquisition_functions(ac_func, comp, vals, models, cost_models)
         #overall results of the acquisition functions for each candidate over all models
         overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, self.grid_subset)
@@ -203,8 +209,7 @@ class OptSizeChooser(object):
             models.append(gp)
             if self._model_costs:
                 cost_hyper = self._cost_function_hyper_parameter_samples[h]
-                #we want to use log scale for the time
-                cost_gp = GPModel(comp, np.log(durs), cost_hyper[0], cost_hyper[1], cost_hyper[2], cost_hyper[3], self._cost_covar)
+                cost_gp = GPModel(comp, durs, cost_hyper[0], cost_hyper[1], cost_hyper[2], cost_hyper[3], self._cost_covar)
                 cost_models.append(cost_gp)
         return (models, cost_models)
     
@@ -313,18 +318,11 @@ def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, 
             locally_optimized[i] = p
         except Exception, ex:
             log("Worker Thread reported exception:" + str(ex) + "\n Action: ignoring result")
-    #remove duplicate entries and fill with best_cands
-    print locally_optimized - best_cands
-    #TODO: remove
-    for i in range(0, best_cands.shape[0]):
-        print _compute_negative_gradient_over_hypers(best_cands[i].flatten(), ac_funcs, dimension)
-    
+    #remove duplicate entries and fill with best_cands    
     preselected_candidates = list(set(tuple(p) for p in locally_optimized))
     n = len(preselected_candidates)
     for i in range(0, number_of_points_to_return-n):
         preselected_candidates.append(best_cands[i])
-    #TODO: remove
-    #print np.array(preselected_candidates)
     
     #TODO: maybe it would be good to have random points here!
     #return the number_of_points_to_return best candidates

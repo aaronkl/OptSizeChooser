@@ -18,7 +18,7 @@ class Test(AbstractTest):
         ei = ExpectedImprovement(self.X, self.y, self.gp, None)
         ei_sp = self._ei_spear_mint(Xstar, self.X, self.y, compute_grad=False)[0]
         ei_val = ei.compute(Xstar[0], False)
-        print str(ei_sp) + "=" + str(ei_val)
+        #print str(ei_sp) + "=" + str(ei_val)
         assert(abs(ei_val-ei_sp) < 1e-50)
     
     def _ei_spear_mint(self, cand, comp, vals, compute_grad=True):
@@ -73,13 +73,14 @@ class Test(AbstractTest):
         xstar = scale * npr.random((1,d))
         ei = ExpectedImprovement(self.X, self.y, self.gp, None)
         grad_ei_sp = self._ei_spear_mint(xstar, self.X, self.y, compute_grad=True)[1]
+        #the spearmint gradient is in the other direction (for the minimizer)
+        grad_ei_sp = -grad_ei_sp
         grad_ei = ei.compute(xstar[0], True)[1]
-        
         print str(grad_ei_sp) + "=" + str(grad_ei)
+        assert(spla.norm(grad_ei-grad_ei_sp) < 1e-50)
         def f(x):
             return ei.compute(x, False)
         self.assert_first_order_gradient_approximation(f, xstar[0], grad_ei, 1e-13)
-        assert(spla.norm(grad_ei-grad_ei_sp) < 1e-50)
             
 
 

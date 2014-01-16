@@ -15,8 +15,7 @@ class EntropySearchBigData(EntropySearch):
     def __init__(self, comp, vals, gp, cost_gp=None):
         '''
         Default constructor.
-        '''    
-        #TODO: Use seed
+        '''
         self._omega = np.random.normal(0, 1, NUMBER_OF_CAND_SAMPLES)
         self._gp = gp
         self._cost_gp = cost_gp
@@ -28,7 +27,9 @@ class EntropySearchBigData(EntropySearch):
         
     def compute(self, candidate, compute_gradient = False):
         kl = super(EntropySearchBigData, self).compute(candidate, compute_gradient)
-        return kl / self._cost_gp.predict(np.array([candidate]))
+        #TODO: How to scale the Entropy reduction?
+        #It is basically a question of how long one is willing to wait for how much improvement
+        return kl / np.log(self._cost_gp.predict(np.array([candidate]))+1)
     
     def _log_proposal_measure(self, x):
         if np.any(x<0) or np.any(x>1):

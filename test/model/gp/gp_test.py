@@ -125,27 +125,6 @@ class Test(AbstractTest):
         #print y2
         assert(spla.norm(y1 - y2) < 1e-5)
         
-    def testCovarianceFunctions(self):
-        '''
-        Tests the implemented covariance functions.
-        '''
-        cov_func = gp_model.Polynomial3
-        M1 = cov_func(self.ls, self.X, self.X)
-        #M1 = M ** 3
-        #print M1[3][5]
-        #print M[3][5] ** 3
-        M1=M1#+1e-6*np.eye(self.X.shape[0])
-        M2 = np.zeros([self.X.shape[0], self.X.shape[0]])
-        for i in range(0, self.X.shape[0]):
-            for j in range(0, self.X.shape[0]):
-                M2[i][j] = cov_func(self.ls, self.X[i],self.X[j])
-                assert(abs(M1[i][j] -  M2[i][j]) < 1e-5)
-        #try:
-        spla.cholesky(M1+1e-6*np.eye(self.X.shape[0]), lower=True)
-    #    except _:
-            
-        #spla.cholesky(M2+1e-6*np.eye(M1.shape[0]), lower=True)
-        
         
     def testCopy(self):
         '''

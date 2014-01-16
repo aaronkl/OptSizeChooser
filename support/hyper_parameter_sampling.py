@@ -9,13 +9,14 @@ This class wraps the hyper-parameter sampling methods for the Gaussian processes
 import numpy as np
 import scipy.linalg as spla
 import util
+from helpers import log
 
 '''
 Global constants.
 '''
 NOISE_SCALE = 0.1  # horseshoe prior
 AMP2_SCALE  = 1    # zero-mean log normal prior
-MAX_LS      = 10    # top-hat prior on length scales
+MAX_LS      = 2    # top-hat prior on length scales
 
 def _sample_mean_amp_noise(comp, vals, cov_func, start_point, ls):
     default_noise = 1e-3
@@ -94,5 +95,6 @@ def sample_hyperparameters(mcmc_iters, noiseless, input_points, func_values, cov
             [mean, amp2, noise] =_sample_mean_amp_noise(input_points, func_values, cov_func, np.array([mean, amp2, noise]), ls)
         ls = _sample_ls(input_points, func_values, cov_func, ls, mean, amp2, noise)
         #This is the order as expected
+        log("mean: " + str(mean) + ", noise: " + str(noise) + " amp: " + str(amp2) + ", ls: " + str(ls))
         hyper_samples.append((mean, noise, amp2, ls))
     return hyper_samples
