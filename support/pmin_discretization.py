@@ -19,7 +19,11 @@ def sample_representer_points(starting_point, log_proposal_measure, number_of_po
         a numpy array containing the desired number of samples
     '''
     representer_points = np.zeros([number_of_points,starting_point.shape[0]])
+    chain_length = 20 * starting_point.shape[0] 
+    #TODO: burnin?
     for i in range(0,number_of_points):
-        representer_points[i] = util.slice_sample(starting_point, log_proposal_measure)
-        starting_point = representer_points[i]
+        #this for loop ensures better mixing
+        for c in range(0, chain_length):
+            starting_point = util.slice_sample(starting_point, log_proposal_measure)
+        representer_points[i] = starting_point
     return representer_points

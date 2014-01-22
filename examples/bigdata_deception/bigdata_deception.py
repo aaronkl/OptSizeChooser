@@ -10,4 +10,5 @@ def bigdata_deception(x):
 
 # Write a function like this called 'main'
 def main(job_id, params):
+  print "evaluating " + str(params['X'])
   return bigdata_deception(params['X'])

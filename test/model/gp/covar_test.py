@@ -10,44 +10,82 @@ from test.abstract_test import AbstractTest, d, scale
 import numpy as np
 import scipy.linalg as spla
 import numpy.random as npr
-from model.gp.gp_model import Polynomial3, grad_Polynomial3, getNumberOfParameters, BigData, GPModel
+from model.gp.gp_model import Polynomial3, grad_Polynomial3, getNumberOfParameters, \
+BigData, grad_BigData, GPModel, Normalized_Polynomial3, grad_Normalized_Polynomial3
 from support.hyper_parameter_sampling import sample_hyperparameters
+import gp
 
+def _invert_sign(grad_cov):
+    '''
+    Returns a copy of the given gradient covariance function that differs by sign.
+    (Necessary because the signs differ with the finite differences approximation)
+    '''
+    def inv_grad_cov(ls, X, x=None): return -grad_cov(ls, X, x)
+    return inv_grad_cov
 
 class Test(AbstractTest):
 
-    def testPolynomial3(self):
+    def _testCovar(self, cov_name, cov_func, grad_cov_func):
         '''
-        Tests the implemented covariance functions.
+        Basic method for testing. Tests that cholesky decomposition is possible and that gradient is approximately
+        correct.
+        Args:
+            cov_name: the name of the covariance function
+            cov_func: the covariance function k(x,y) to be tested
+            grad_cov_func: function that computes dk(x,y)/dx
         '''
-        cov_func = Polynomial3
-        ls = npr.rand(getNumberOfParameters('Polynomial3', d))
+        ls = npr.rand(getNumberOfParameters(cov_name, d))
         M1 = cov_func(ls, self.X, self.X)
-        #M1 = M ** 3
-        #print M1[3][5]
-        #print M[3][5] ** 3
-        M1=M1#+1e-6*np.eye(self.X.shape[0])
         M2 = np.zeros([self.X.shape[0], self.X.shape[0]])
         for i in range(0, self.X.shape[0]):
             for j in range(0, self.X.shape[0]):
-                M2[i][j] = cov_func(ls, self.X[i],self.X[j])
+                #M2[i][j] = cov_func(ls, self.X[i],self.X[j])
+                c = cov_func(ls, np.array([self.X[i]]),np.array([self.X[j]]))
+                #print c
+                M2[i][j] = c
                 assert(abs(M1[i][j] -  M2[i][j]) < 1e-5)
         #try:
         spla.cholesky(M1+1e-6*np.eye(self.X.shape[0]), lower=True)
         
-        
-        xstar = scale * npr.randn(1,d)
-        dfdx = grad_Polynomial3(ls, xstar)[0]
+        #test with argument x2=none
+        xstar = scale * npr.randn(1,d)  
+        dfdx = grad_cov_func(ls, xstar)
         f = lambda x: cov_func(ls, x)
-        #TODO: implement correct gradient
-        self.assert_first_order_gradient_approximation(f, xstar, dfdx, 1e-6)
+        self.assert_first_order_gradient_approximation(f, xstar, dfdx, 1e-13)
         
-    #    except _:
-            
-        #spla.cholesky(M2+1e-6*np.eye(M1.shape[0]), lower=True)
+        #test with first argument being only a vector
+        x1 = scale * npr.randn(1,d)
+        dfdx = grad_cov_func(ls, x1, xstar)
+        f = lambda x: cov_func(ls, x1, x)
+        self.assert_first_order_gradient_approximation(f, xstar, dfdx, 1e-13)
         
+        #test with first argument being a matrix
+        dfdx = grad_cov_func(ls, self.X, xstar)
+        f = lambda x: cov_func(ls, self.X, x).T #this way we get an appropriate vector
+        self.assert_first_order_gradient_approximation(f, xstar, dfdx, 1e-13)
         
-    def testBigDataKernel(self):
+    def testPolynomial3(self):
+        self._testCovar('Polynomial3', Polynomial3, _invert_sign(grad_Polynomial3))
+        
+    def testNormalizedPolynomial3(self):
+        self._testCovar('Normalized_Polynomial3', Normalized_Polynomial3, _invert_sign(grad_Normalized_Polynomial3))
+          
+    def testARDSE(self):
+        name = "ARDSE"
+        cov = getattr(gp, name)
+        grad_cov = getattr(gp, 'grad_' + name)
+        self._testCovar(name, cov, _invert_sign(grad_cov))
+          
+    def testMatern52(self):
+        name = 'Matern52'
+        cov = getattr(gp, name)
+        grad_cov = getattr(gp, 'grad_' + name)
+        self._testCovar(name, cov,  _invert_sign(grad_cov))
+          
+    def testBigData(self):
+        self._testCovar('BigData', BigData,  _invert_sign(grad_BigData))
+          
+    def testBigDataKernelIsMonotone(self):
         '''
         This function tests that Gaussian processes using this kernel predict
         lower function values the higher the first input argument.

@@ -76,10 +76,12 @@ class Test(AbstractTest):
         #the spearmint gradient is in the other direction (for the minimizer)
         grad_ei_sp = -grad_ei_sp
         grad_ei = ei.compute(xstar[0], True)[1]
-        print str(grad_ei_sp) + "=" + str(grad_ei)
+        #print str(grad_ei_sp) + "=" + str(grad_ei)
         assert(spla.norm(grad_ei-grad_ei_sp) < 1e-50)
+        
+        grad_ei = np.array([np.array([grad_ei])]) #for the test we need the form [[[d1,...,dn]]]
         def f(x):
-            return ei.compute(x, False)
+            return np.array([ei.compute(x, False)])
         self.assert_first_order_gradient_approximation(f, xstar[0], grad_ei, 1e-13)
             
 

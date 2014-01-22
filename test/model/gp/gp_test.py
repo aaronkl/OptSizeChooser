@@ -19,7 +19,9 @@ class Test(AbstractTest):
         Checks if the implementation of the prediction function is correct.
         Assumes that the spear mint implementation is correct.
         '''
+        #TODO: build a test for prediction with matrix as argument!
         xstar = np.array([scale * npr.randn(d)])
+        #xstar = self.X
         # The primary covariances for prediction.
         comp_cov   = cov(self, self.X)
         cand_cross = cov(self, self.X, xstar)
@@ -35,9 +37,12 @@ class Test(AbstractTest):
         func_m = np.dot(cand_cross.T, alpha) + self.mean
         func_v = self.amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
         (m,v) = self.gp.predict(xstar, variance=True)
+        assert(v>=0)
 #         print (func_m, m)
 #         print (func_v, v)
         assert(abs(func_m-m) < 1e-50)
+        print func_v
+        print v
         assert(abs(func_v-v) < 1e-50)
 
 
@@ -46,14 +51,7 @@ class Test(AbstractTest):
         Compares the gradients computed as done originally in spear-mint with our implementation.
         '''
         xstar = scale * npr.random((1,d))
-        (mg,mv) = self.gp.getGradients(xstar[0])
-        
-        epsilon = 1e-6
-        self.assert_first_order_gradient_approximation(self.gp.predict, xstar, mg, epsilon)
-        
-        def get_variance(x):
-            return self.gp.predict(x, True)[1][0]
-        self.assert_first_order_gradient_approximation(get_variance, xstar, mv[0], epsilon)
+        (mg,vg) = self.gp.getGradients(xstar[0])
         
         ######################################################################################
         #Spearmint Code
@@ -84,7 +82,19 @@ class Test(AbstractTest):
         grad_xp_m = -grad_xp_m
         grad_xp_v = -grad_xp_v
         assert(spla.norm(mg - grad_xp_m) < 1e-50)
-        assert(spla.norm(mv[0] - grad_xp_v[0]) < 1e-50)
+        assert(spla.norm(vg[0] - grad_xp_v[0]) < 1e-50)
+        
+        #Test against first order approximation
+        epsilon = 1e-6
+        vg = np.array([vg]) #needs to be in the format [[d0,...,dn]]
+        def get_variance(x):
+            return self.gp.predict(x, True)[1]
+        self.assert_first_order_gradient_approximation(get_variance, xstar, vg, epsilon)
+        
+        mg = np.array([np.array([mg])]) #we need mg in the format [[d0, d1, ..., dn]]
+        def get_mean(x):
+            return np.array([self.gp.predict(x)])
+        self.assert_first_order_gradient_approximation(self.gp.predict, xstar, mg, epsilon)
         
         
         ######################################################################################

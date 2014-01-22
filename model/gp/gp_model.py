@@ -10,40 +10,116 @@ import scipy.linalg as spla
 from ..model import Model
 import copy
 
-def grad_Polynomial3(ls, x1, x2=None):
-    raise NotImplementedError("Not implemented!")
-    #ls_ = ls[1:]
-    x1 = x1 #/ ls_
+def _polynomial3_raw(ls, x1, x2=None, value=True, grad=False):
+    factor = 1
     if x2 is None:
+        #in this case k(x,y) has to be considered of the form k(x)
+        #and dk/dx is then 3(x^Tx+c)^2*(2x)
+        factor = 2
         x2=x1
+    #we may assume the input is a matrix of the form N x D
+    #c = np.empty([x1.shape[0],x2.shape[0]])
+    #c.fill(ls[0])
+    c = ls[0]
+    dot = np.dot(x1, x2.T) + c
+    if grad:
+        #compute dk(x1,x2)/dx2
+        #=3 * apply(dot, ^2) o x1
+        #dk = factor * 3 * (dot ** 2) * x1
+        #this is to get the gradient in spearmint's format
+        dk = np.array([(factor * 3 * (dot[i] ** 2)) * np.array([x1[i]]) for i in range(0, x1.shape[0])])
+        
+        #because the spearmint implementations all invert the signs of their gradients we will do so as well
+        dk = -dk        
+        if value:
+            #we want both: value and gradient
+            k = dot ** 3
+            return (k, dk)
+        #we want just the gradient
+        return dk
     else:
-        x2=x2#/ls_
-    #TODO: this is wrong!
-    return ls[0] * 3 * (np.dot(x1, x2.T) + ls[0]) ** 2
+        #we want just the kernel value
+        k = dot ** 3
+        return k
+
+def grad_Polynomial3(ls, x1, x2=None):
+    return _polynomial3_raw(ls, x1, x2, value=False, grad=True)
 
 def Polynomial3(ls, x1, x2=None, grad=False):
-    #FIXME: is this function wrong or just numerically unstable?
-    #first length scale parameter is for offset
-    #ls_ = ls[1:]
-    x1 = x1 #/ ls_
-    if x2 is None:
-        x2=x1
-    else:
-        x2=x2#/ls_
-    #because x1 is NxD matrix and not DxN we transpose the second entry
-    cov = (np.dot(x1, x2.T) + ls[0]) ** 3
+    return _polynomial3_raw(ls, x1, x2, True, grad)
+
+def Normalized_Polynomial3(ls, x1, x2=None, grad=False):
+    #TODO: quick and dirty, refactor!
+    compute_grad = False
     if grad:
-        grad_cov = grad_Polynomial3(ls,x1,x2)
-        return (cov, grad_cov)
-    return cov
+        (k, dk) = _polynomial3_raw(ls, x1, x2, True, True)
+        compute_grad = True
+    else:
+        k = _polynomial3_raw(ls, x1, x2)
+    if x2 is None:
+        x2 = x1
+        if grad:
+            dk = np.array([np.array([np.zeros(x1.shape[1])])])
+            compute_grad = False
+    for i in range(0, x1.shape[0]):
+        if compute_grad:
+            #we assume x2 was not none!!!
+            sqrt_kxx = np.sqrt(_polynomial3_raw(ls, np.array(x1[i])))
+            sqrt_kyy = np.sqrt(_polynomial3_raw(ls, x2))
+            kxy = k[i]
+            dk[i][0] = 1/sqrt_kxx*(dk[i][0]/sqrt_kyy-0.5*kxy*grad_Polynomial3(ls, x2)[0]/(sqrt_kyy**3))
+        for j in range(0, x2.shape[0]):
+            ki = _polynomial3_raw(ls, np.array(x1[i]))
+            kj = _polynomial3_raw(ls, np.array(x2[j]))
+            k[i][j] = k[i][j]/(np.sqrt(ki)*np.sqrt(kj))
+    if not grad:
+        return k
+    return (k,dk)
+
+def grad_Normalized_Polynomial3(ls, x1, x2=None):
+    #TODO: quick and dirty, refactor!
+    (k, dk) = _polynomial3_raw(ls, x1, x2, True, True)
+    if x2 is None:
+        return np.array([np.array([np.zeros(x1.shape[1])])])
+    for i in range(0, x1.shape[0]):
+        #we assume x2 was not none!!!
+        sqrt_kxx = np.sqrt(_polynomial3_raw(ls, np.array(x1[i])))
+        sqrt_kyy = np.sqrt(_polynomial3_raw(ls, x2))
+        kxy = k[i]
+        dk[i][0] = 1/sqrt_kxx*(dk[i][0]/sqrt_kyy-0.5*kxy*grad_Polynomial3(ls, x2)[0]/(sqrt_kyy**3))
+    return dk
+
+def _bigData_raw(ls, x1, x2=None, value=True, grad=False):
+    k1x2 = None
+    k2x2 = None
+    #separate input vector(s) after first dimension 
+    k1x1 = x1[:,:1] #get first entry of each vector
+    k2x1 = x1[:,1:] #get the rest
+    if not(x2 is None):
+        k1x2 = x2[:,:1]
+        k2x2 = x2[:,1:]
+    
+    if not grad:
+        #only the value is of interest
+        k1 = Polynomial3(ls[:1], k1x1, k1x2)
+        k2 = gp.Matern52(ls[1:], k2x1, k2x2)
+        k = np.array([k1[i]*k2[i] for i in range(0, x1.shape[0])])
+        return k
+    else:
+        (k1, dk1) = Polynomial3(ls[:1], k1x1, k1x2, grad)
+        (k2, dk2) = gp.Matern52(ls[1:], k2x1, k2x2, grad)
+        dk = np.array([np.concatenate((dk1[i]*k2[i], k1[i]*dk2[i]), axis=1) for i in range(0, x1.shape[0])])
+        if not value:
+            #we care only for the gradient
+            return dk
+        k = np.array([k1[i]*k2[i] for i in range(0, x1.shape[0])])
+        return (k,dk)
 
 def grad_BigData(ls,x1,x2=None):
-    raise NotImplementedError("Not implemented!")
+    return _bigData_raw(ls, x1, x2, value=False, grad=True)
 
 def BigData(ls, x1, x2=None, grad=False):
-    if grad:
-        raise NotImplementedError("Not implemented!")
-    return Polynomial3(ls[:1], x1, x2, grad)*gp.Matern52(ls[1:], x1, x2, grad)
+    return _bigData_raw(ls, x1, x2, True, grad)
 
 def getNumberOfParameters(covarname, input_dimension):
     '''
@@ -62,8 +138,10 @@ def getNumberOfParameters(covarname, input_dimension):
     except:
         if covarname == 'Polynomial3':
             return 1
+        elif covarname == 'Normalized_Polynomial3':
+            return getNumberOfParameters('Polynomial3', input_dimension)
         elif covarname == 'BigData':
-            return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Polynomial3', input_dimension-1)
+            return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension-1)
         else:
             raise NotImplementedError('The given covariance function (' + covarname + 'was not found.')
         
@@ -124,7 +202,9 @@ class GPModel(Model):
             return func_m
         
         beta = spla.solve_triangular(self._L, kXstar, lower=True)
-        func_v = self._amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
+        #TODO: change back
+        #func_v = self._amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
+        func_v = self._compute_covariance(Xstar) - np.dot(beta.T, beta)
         return (func_m, func_v)
 
     def predict_vector(self, input_point):
@@ -161,8 +241,6 @@ class GPModel(Model):
         #s'(x)=-dk^T kK /s(x). So for the derivative of v(x) in terms of s(x) we have:
         #v(x)=s^2(x) <=> v'(x)=2s(x)*s'(x)
         grad_v = -2 * np.dot(kK.T, dk)
-        #As in spear mint grad_v is of the form [[v1, v2, ...]]
-        #TODO: Check if this is really necessary. Seems dirty.
         return (grad_m, grad_v)
 
     def getNoise(self):

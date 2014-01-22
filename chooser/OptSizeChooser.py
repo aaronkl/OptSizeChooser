@@ -16,7 +16,7 @@ from multiprocessing import Pool
 from support.hyper_parameter_sampling import sample_hyperparameters
 import traceback
 from helpers import log
-from model.gp.gp_model import BigData, getNumberOfParameters
+from model.gp.gp_model import BigData, getNumberOfParameters, Polynomial3, grad_BigData
 
 '''
 The number of candidates if using local search.
@@ -86,16 +86,23 @@ class OptSizeChooser(object):
         self.expt_dir = expt_dir
         self._hyper_samples = []
         self._cost_function_hyper_parameter_samples = []
-        self._covar = covar
-        self._cov_func = getattr(gp, covar)
-        self._covar_derivative = getattr(gp, "grad_" + covar)
-        self._cost_covar = 'BigData'
-        self._cost_cov_func = BigData
-        self._cost_covar = covar
-        self._cost_cov_func = self._cov_func
+        #TODO: generalize
+        self._covar = 'BigData'
+        self._cov_func = BigData #getattr(gp, covar)
+        self._covar_derivative = grad_BigData #getattr(gp, "grad_" + covar)
+        self._cost_covar = 'Polynomial3'
+        self._cost_cov_func = Polynomial3
         self._is_initialized = False
-        self._do_local_search = True
-        self._model_costs = True
+        #TODO: remove
+        self._do_local_search = False
+        #TODO: remove
+        self._model_costs = False
+        #TODO: generalize!
+        #TODO: remove
+        self._ac_func = EntropySearch
+        #the acquisition function to preselect candidates before giving it to the real acquisition function
+        #only used if do_local_search is true
+        self._preselection_ac_func = ExpectedImprovement
 
     def _real_init(self, dims, comp, values, durations):
         '''
@@ -134,36 +141,36 @@ class OptSizeChooser(object):
         comp = grid[complete,:]
         #TODO: find good initialization procedure!
         if comp.shape[0] < 2:
+            c = grid[candidates[0]]
+            log("Evaluating: " + str(c))
             return candidates[0]
+            #return (len(candidates)+1, c)
                 
         vals = values[complete]
         dimension = comp.shape[1]
-        #we want it on a log scale
         durs = durations[complete]
         
         #TODO: remove
-        #should this be a numpy array?
         for i in range(0, durs.shape[0]):
-            durs[i] = (comp[i][0]+1)**3
+            durs[i] = ((comp[i][0]*10+1)**3)*1000
         
         if not self._is_initialized:
             self._real_init(dimension, comp, vals, durs)
 
         #initialize Gaussian processes
         (models, cost_models) = self._initialize_models(comp, vals, durs)
-#         import support.Visualizer as vis
-#         vis.plot2DFunction(lambda x: models[len(models)-1].predict(x))
-#         vis.plot2DFunction(lambda x: cost_models[len(cost_models)-1].predict(x))
+        import support.Visualizer as vis
+        vis.plot2DFunction(lambda x: models[len(models)-1].predict(x))
+        #vis.plot2DFunction(lambda x: cost_models[len(cost_models)-1].predict(x))
                
         cand = grid[candidates,:]
         if self._do_local_search:
-            #TODO: generalize
-            ei = ExpectedImprovement
-            cand = _preselect_candidates(NUMBER_OF_CANDIDATES, cand, comp, vals, models, cost_models, ei)
-    
-        #TODO: generalize!
-        ac_func = EntropySearchBigData
-        ac_funcs = _initialize_acquisition_functions(ac_func, comp, vals, models, cost_models)
+            cand = _preselect_candidates(NUMBER_OF_CANDIDATES, cand, comp, vals, 
+                                         models, cost_models, self._preselection_ac_func)
+        #TODO: remove (or remove this comment)
+        else:
+            cand = cand[:NUMBER_OF_CANDIDATES]
+        ac_funcs = _initialize_acquisition_functions(self._ac_func, comp, vals, models, cost_models)
         #overall results of the acquisition functions for each candidate over all models
         overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, self.grid_subset)
             
@@ -172,7 +179,7 @@ class OptSizeChooser(object):
             log("Evaluating: " + str(cand[best_cand]))
             return (len(candidates)+1, cand[best_cand])
         else:
-            log("Evaluating: " + str(candidates[best_cand]))
+            log("Evaluating: " + str(cand[best_cand]))
             return int(candidates[best_cand])
         
     def _initialize_models(self, comp, vals, durs):

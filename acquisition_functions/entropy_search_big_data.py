@@ -21,20 +21,28 @@ class EntropySearchBigData(EntropySearch):
         self._cost_gp = cost_gp
         starting_point = np.array([comp[np.argmin(vals)][1,]]) #we don't want to slice sample over the first value
         self._ei = ExpectedImprovement(comp, vals, gp, cost_gp)
-        self._representers = pmin_discretization.sample_representer_points(starting_point, 
-                                                                           self._log_proposal_measure, 
+        representers = pmin_discretization.sample_representer_points(starting_point, 
+                                                                           self._sample_measure, 
                                                                            NUMBER_OF_REPRESENTER_POINTS)
+        self._representers = np.empty([NUMBER_OF_REPRESENTER_POINTS, comp.shape[1]])
+        #the representers miss the first coordinate: we need to add it here.
+        for i in range(0, NUMBER_OF_REPRESENTER_POINTS):
+            self._representers[i] = np.insert(representers[i], 0, 1) #set first value to one
         
     def compute(self, candidate, compute_gradient = False):
         kl = super(EntropySearchBigData, self).compute(candidate, compute_gradient)
         #TODO: How to scale the Entropy reduction?
         #It is basically a question of how long one is willing to wait for how much improvement
-        return kl / np.log(self._cost_gp.predict(np.array([candidate]))+1)
+        #return kl / np.log(self._cost_gp.predict(np.array([candidate]))+1)
+        #TODO: change back
+        scale = np.exp(self._cost_gp.predict(np.array([candidate])))
+        if scale == 0:
+            return np.inf
+        return kl / scale
     
-    def _log_proposal_measure(self, x):
+    def _sample_measure(self, x):
         if np.any(x<0) or np.any(x>1):
             return -np.inf
         #set first value to one     
         x = np.insert(x, 0, 1)
-        v = self._ei.compute(x)
-        return np.log(v+1e-10)
+        return self._log_proposal_measure(x)
