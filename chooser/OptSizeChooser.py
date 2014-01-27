@@ -16,10 +16,11 @@ from multiprocessing import Pool
 from support.hyper_parameter_sampling import sample_hyperparameters
 import traceback
 from helpers import log
-from model.gp.gp_model import BigData, getNumberOfParameters, Polynomial3, grad_BigData
+from model.gp.gp_model import BigData, getNumberOfParameters, Polynomial3, grad_BigData, CostKernel
 
 '''
 The number of candidates if using local search.
+Must be a factor of 2.
 '''
 NUMBER_OF_CANDIDATES = 100
 
@@ -69,39 +70,40 @@ def _call_minimizer(cand, func, arguments, opt_bounds):
         raise e
 
 class OptSizeChooser(object):
-    def __init__(self, expt_dir, covar="Matern52", mcmc_iters=10,
+    def __init__(self, expt_dir, covar="Matern52", cost_covar='Polynomial3', mcmc_iters=10,
                  pending_samples=100, noiseless=False, burnin=100,
-                 grid_subset=20):
+                 grid_subset=20, acquisition_function='EntropySearchBigData', 
+                 model_costs=True, do_local_search=True, 
+                 local_search_acquisition_function='ExpectedImprovement'):
+        #TODO: use arguments!
         '''
         Constructor
         '''
         seed = np.random.randint(65000)
         log("using seed: " + str(seed))
         np.random.seed(seed)
-        self._mcmc_iters = mcmc_iters
-        self._noiseless = noiseless
-        self._burnin = burnin
         self.pending_samples = pending_samples
         self.grid_subset = grid_subset
         self.expt_dir = expt_dir
         self._hyper_samples = []
         self._cost_function_hyper_parameter_samples = []
+        self._is_initialized = False
         #TODO: generalize
+        self._mcmc_iters = mcmc_iters
+        self._noiseless = noiseless
+        self._burnin = burnin
         self._covar = 'BigData'
         self._cov_func = BigData #getattr(gp, covar)
         self._covar_derivative = grad_BigData #getattr(gp, "grad_" + covar)
-        self._cost_covar = 'Polynomial3'
-        self._cost_cov_func = Polynomial3
-        self._is_initialized = False
-        #TODO: remove
-        self._do_local_search = False
-        #TODO: remove
-        self._model_costs = False
-        #TODO: generalize!
-        #TODO: remove
-        self._ac_func = EntropySearch
+        self._cost_covar = 'CostKernel'
+        self._cost_cov_func = CostKernel
+        self._do_local_search = True
+        self._model_costs = True
+        #TODO: if false check that acquisition function can handle that
+        self._ac_func = EntropySearchBigData
         #the acquisition function to preselect candidates before giving it to the real acquisition function
         #only used if do_local_search is true
+        #TODO: check that acquisition function computes gradients
         self._preselection_ac_func = ExpectedImprovement
 
     def _real_init(self, dims, comp, values, durations):
@@ -159,17 +161,16 @@ class OptSizeChooser(object):
 
         #initialize Gaussian processes
         (models, cost_models) = self._initialize_models(comp, vals, durs)
+        
+        #TODO: remove
         import support.Visualizer as vis
         vis.plot2DFunction(lambda x: models[len(models)-1].predict(x))
-        #vis.plot2DFunction(lambda x: cost_models[len(cost_models)-1].predict(x))
+        vis.plot2DFunction(lambda x: cost_models[len(cost_models)-1].predict(x))
                
         cand = grid[candidates,:]
         if self._do_local_search:
             cand = _preselect_candidates(NUMBER_OF_CANDIDATES, cand, comp, vals, 
                                          models, cost_models, self._preselection_ac_func)
-        #TODO: remove (or remove this comment)
-        else:
-            cand = cand[:NUMBER_OF_CANDIDATES]
         ac_funcs = _initialize_acquisition_functions(self._ac_func, comp, vals, models, cost_models)
         #overall results of the acquisition functions for each candidate over all models
         overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, self.grid_subset)
@@ -280,8 +281,11 @@ def _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size=16):
                 
 def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, cost_models, ac_func):
     '''
-    Evaluates the acquisition function for all candidates over all models. Then selects the number_of_points_to_return
-    best and optimizes them locally. (So the acquisition function MUST be capable of computing gradients)
+    Evaluates the acquisition function for all candidates over all models. Then selects the
+    number_of_points_to_return/2 best and optimizes them locally. 
+    (So the acquisition function MUST be capable of computing gradients)
+    This will be the first half of the array.
+    The other half is filled with the first number_of_points_to_return/2 entries in cand.
     Args:
         number_of_points_to_return: the number of candidates that are to be returned
         cand: the available candidates
@@ -299,7 +303,7 @@ def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, 
     cand = np.vstack((np.random.randn(10,comp.shape[1])*0.001 +
                            comp[np.argmin(vals),:], cand))
     overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand)
-    best_cands_indices = overall_ac_value.argsort()[-number_of_points_to_return:][::-1]
+    best_cands_indices = overall_ac_value.argsort()[-number_of_points_to_return/2:][::-1]
     best_cands = cand[best_cands_indices, :]
     locally_optimized = np.zeros(best_cands.shape)
     opt_bounds = []# optimization bounds
@@ -328,8 +332,11 @@ def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, 
     #remove duplicate entries and fill with best_cands    
     preselected_candidates = list(set(tuple(p) for p in locally_optimized))
     n = len(preselected_candidates)
-    for i in range(0, number_of_points_to_return-n):
+    for i in range(0, number_of_points_to_return/2-n):
         preselected_candidates.append(best_cands[i])
+    
+    for i in range(0, number_of_points_to_return/2):
+        preselected_candidates.append(cand[i])
     
     #TODO: maybe it would be good to have random points here!
     #return the number_of_points_to_return best candidates

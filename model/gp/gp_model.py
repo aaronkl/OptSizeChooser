@@ -89,10 +89,45 @@ def grad_Normalized_Polynomial3(ls, x1, x2=None):
         dk[i][0] = 1/sqrt_kxx*(dk[i][0]/sqrt_kyy-0.5*kxy*grad_Polynomial3(ls, x2)[0]/(sqrt_kyy**3))
     return dk
 
+def _sum_kernel_raw(kf1, kf2, ls1, ls2, x11, x12, x21=None, x22=None, value=True, grad=False):
+    if not grad:
+        #only the value is of interest
+        k1 = kf1(ls1, x11, x21)
+        k2 = kf2(ls2, x12, x22)
+        k = np.array([k1[i]+k2[i] for i in range(0, x11.shape[0])])
+        return k
+    else:
+        (k1, dk1) = kf1(ls1, x11, x21, True)
+        (k2, dk2) = kf2(ls1, x12, x22, True)
+        #sum rule
+        dk = dk1+dk2
+        if not value:
+            #we care only for the gradient
+            return dk
+        k = np.array([k1[i]+k2[i] for i in range(0, x11.shape[0])])
+        return (k,dk)
+    
+def CostKernel(ls, x1, x2=None, grad=False):
+    ls1 = ls[:1]
+    ls2 = ls[1:]
+    x11 = x1[:,:1]
+    x21 = None
+    if x2 is not None:
+        x21 = x2[:,:1]
+    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x11, x1, x21, x2, True, grad)
+
+def grad_CostKernel(ls, x1, x2=None):
+    ls1 = ls[:1]
+    ls2 = ls[2:]
+    x11 = x1[:,:1]
+    if x2 is not None:
+        x21 = x1[:,:1]
+    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x11, x1, x21, x2, False, True)
+    
 def _bigData_raw(ls, x1, x2=None, value=True, grad=False):
     k1x2 = None
     k2x2 = None
-    #separate input vector(s) after first dimension 
+    #separate input vector(s) after first dimension
     k1x1 = x1[:,:1] #get first entry of each vector
     k2x1 = x1[:,1:] #get the rest
     if not(x2 is None):
@@ -108,6 +143,7 @@ def _bigData_raw(ls, x1, x2=None, value=True, grad=False):
     else:
         (k1, dk1) = Polynomial3(ls[:1], k1x1, k1x2, grad)
         (k2, dk2) = gp.Matern52(ls[1:], k2x1, k2x2, grad)
+        #product rule
         dk = np.array([np.concatenate((dk1[i]*k2[i], k1[i]*dk2[i]), axis=1) for i in range(0, x1.shape[0])])
         if not value:
             #we care only for the gradient
@@ -142,6 +178,8 @@ def getNumberOfParameters(covarname, input_dimension):
             return getNumberOfParameters('Polynomial3', input_dimension)
         elif covarname == 'BigData':
             return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension-1)
+        elif covarname == 'CostKernel':
+            return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension)
         else:
             raise NotImplementedError('The given covariance function (' + covarname + 'was not found.')
         
