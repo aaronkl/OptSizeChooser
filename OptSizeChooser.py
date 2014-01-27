@@ -8,7 +8,7 @@ import gp
 import numpy as np
 import scipy.optimize as spo
 import util
-from model.gp.gp_model import GPModel
+from gp_model import GPModel
 from acquisition_functions.expected_improvement import ExpectedImprovement
 from acquisition_functions.entropy_search import EntropySearch
 from acquisition_functions.entropy_search_big_data import EntropySearchBigData
@@ -16,7 +16,7 @@ from multiprocessing import Pool
 from support.hyper_parameter_sampling import sample_hyperparameters
 import traceback
 from helpers import log
-from model.gp.gp_model import BigData, getNumberOfParameters, Polynomial3, grad_BigData, CostKernel
+from gp_model import BigData, getNumberOfParameters, Polynomial3, grad_BigData, CostKernel
 
 '''
 The number of candidates if using local search.
@@ -153,8 +153,8 @@ class OptSizeChooser(object):
         durs = durations[complete]
         
         #TODO: remove
-        for i in range(0, durs.shape[0]):
-            durs[i] = ((comp[i][0]*10+1)**3)*1000
+        #for i in range(0, durs.shape[0]):
+        #    durs[i] = ((comp[i][0]*10+1)**3)*1000
         
         if not self._is_initialized:
             self._real_init(dimension, comp, vals, durs)
@@ -163,9 +163,9 @@ class OptSizeChooser(object):
         (models, cost_models) = self._initialize_models(comp, vals, durs)
         
         #TODO: remove
-        import support.Visualizer as vis
-        vis.plot2DFunction(lambda x: models[len(models)-1].predict(x))
-        vis.plot2DFunction(lambda x: cost_models[len(cost_models)-1].predict(x))
+        #import support.Visualizer as vis
+        #vis.plot2DFunction(lambda x: models[len(models)-1].predict(x))
+        #vis.plot2DFunction(lambda x: cost_models[len(cost_models)-1].predict(x))
                
         cand = grid[candidates,:]
         if self._do_local_search:

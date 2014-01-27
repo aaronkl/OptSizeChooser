@@ -8,7 +8,7 @@ Provides common set up routine for tests.
 from __future__ import absolute_import #turns off relative imports
 import unittest
 import gp
-from model.gp.gp_model import GPModel, getNumberOfParameters, BigData, Polynomial3, Normalized_Polynomial3
+from gp_model import GPModel, getNumberOfParameters, BigData, Polynomial3, Normalized_Polynomial3
 import support.hyper_parameter_sampling as hps
 import numpy.random as npr
 import numpy as np

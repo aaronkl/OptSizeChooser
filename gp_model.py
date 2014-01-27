@@ -7,7 +7,6 @@ Created on Oct 28, 2013
 import gp
 import numpy as np
 import scipy.linalg as spla
-from ..model import Model
 import copy
 
 def _polynomial3_raw(ls, x1, x2=None, value=True, grad=False):
@@ -185,7 +184,7 @@ def getNumberOfParameters(covarname, input_dimension):
         
 
 
-class GPModel(Model):
+class GPModel(object):
 
     def __init__(self, X, y, mean, noise, amp2, ls, covarname="Matern52", cholesky=None, alpha=None, cov_func = None, covar_derivative=None):
         '''
