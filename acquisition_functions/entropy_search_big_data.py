@@ -7,9 +7,9 @@ This class extends EntropySearch to be used for big data sets. I.e. it incorpora
 and it ASSUMES that the first value of a point is the data set size.
 '''
 import numpy as np
-import support.pmin_discretization as pmin_discretization
-from acquisition_functions.expected_improvement import ExpectedImprovement
-from acquisition_functions.entropy_search import EntropySearch, NUMBER_OF_CAND_SAMPLES, NUMBER_OF_REPRESENTER_POINTS
+#import support.pmin_discretization as pmin_discretization
+from expected_improvement import ExpectedImprovement
+from entropy_search import EntropySearch, NUMBER_OF_CAND_SAMPLES, NUMBER_OF_REPRESENTER_POINTS
 
 class EntropySearchBigData(EntropySearch):
     def __init__(self, comp, vals, gp, cost_gp=None):
@@ -21,7 +21,7 @@ class EntropySearchBigData(EntropySearch):
         self._cost_gp = cost_gp
         starting_point = np.array([comp[np.argmin(vals)][1,]]) #we don't want to slice sample over the first value
         self._ei = ExpectedImprovement(comp, vals, gp, cost_gp)
-        representers = pmin_discretization.sample_representer_points(starting_point, 
+        representers = self.sample_representer_points(starting_point, 
                                                                            self._sample_measure, 
                                                                            NUMBER_OF_REPRESENTER_POINTS)
         self._representers = np.empty([NUMBER_OF_REPRESENTER_POINTS, comp.shape[1]])

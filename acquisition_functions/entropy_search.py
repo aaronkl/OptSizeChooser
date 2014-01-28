@@ -8,9 +8,10 @@ This class implements an acquisition function similar to what is proposed in
 Instead of using Expectation Propagation we apply sampling.
 '''
 import numpy as np
+import util
 import numpy.random as npr
-import support.pmin_discretization as pmin_discretization
-from acquisition_functions.expected_improvement import ExpectedImprovement
+#import support.pmin_discretization as pmin_discretization
+from expected_improvement import ExpectedImprovement
 
 '''
 The number of points used to represent/discretize Pmin.
@@ -38,7 +39,7 @@ class EntropySearch(object):
         self._cost_gp = cost_gp
         starting_point = comp[np.argmin(vals)]
         self._ei = ExpectedImprovement(comp, vals, gp, cost_gp)
-        self._representers = pmin_discretization.sample_representer_points(starting_point, 
+        self._representers = self.sample_representer_points(starting_point, 
                                                                            self._log_proposal_measure, 
                                                                            NUMBER_OF_REPRESENTER_POINTS)
         
@@ -47,6 +48,26 @@ class EntropySearch(object):
             return -np.inf
         v = self._ei.compute(x)
         return np.log(v+1e-10)
+
+    def sample_representer_points(self, starting_point, log_proposal_measure, number_of_points):
+        '''
+        Samples representer points for discretization of Pmin.
+        Args:
+            starting_point: The point where to start the sampling.
+            log_proposal_measure: A function that measures in log-scale how suitable a point is to represent Pmin. 
+            number_of_points: The number of samples to draw.
+        Returns:
+            a numpy array containing the desired number of samples
+        '''
+        representer_points = np.zeros([number_of_points,starting_point.shape[0]])
+        chain_length = 20 * starting_point.shape[0] 
+        #TODO: burnin?
+        for i in range(0,number_of_points):
+            #this for loop ensures better mixing
+            for c in range(0, chain_length):
+                starting_point = util.slice_sample(starting_point, log_proposal_measure)
+            representer_points[i] = starting_point
+        return representer_points
 
     def compute(self, candidate, compute_gradient = False):
         if compute_gradient:
