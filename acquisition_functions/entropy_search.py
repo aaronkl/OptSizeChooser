@@ -9,7 +9,7 @@ Instead of using Expectation Propagation we apply sampling.
 '''
 import numpy as np
 import numpy.random as npr
-#import support.pmin_discretization as pmin_discretization
+from util import slice_sample
 from ..acquisition_functions.expected_improvement import ExpectedImprovement
 
 '''
@@ -31,8 +31,7 @@ class EntropySearch(object):
     def __init__(self, comp, vals, gp, cost_gp=None):
         '''
         Default constructor.
-        '''    
-        #TODO: Use seed
+        '''
         self._omega = np.random.normal(0, 1, NUMBER_OF_CAND_SAMPLES)
         self._gp = gp
         self._cost_gp = cost_gp
@@ -64,7 +63,7 @@ class EntropySearch(object):
         for i in range(0,number_of_points):
             #this for loop ensures better mixing
             for c in range(0, chain_length):
-                starting_point = util.slice_sample(starting_point, log_proposal_measure)
+                starting_point = slice_sample(starting_point, log_proposal_measure)
             representer_points[i] = starting_point
         return representer_points
 
