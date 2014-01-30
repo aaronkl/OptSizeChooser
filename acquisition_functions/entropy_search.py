@@ -8,10 +8,9 @@ This class implements an acquisition function similar to what is proposed in
 Instead of using Expectation Propagation we apply sampling.
 '''
 import numpy as np
-import util
 import numpy.random as npr
 #import support.pmin_discretization as pmin_discretization
-from expected_improvement import ExpectedImprovement
+from ..acquisition_functions.expected_improvement import ExpectedImprovement
 
 '''
 The number of points used to represent/discretize Pmin.

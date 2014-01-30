@@ -8,8 +8,8 @@ and it ASSUMES that the first value of a point is the data set size.
 '''
 import numpy as np
 #import support.pmin_discretization as pmin_discretization
-from expected_improvement import ExpectedImprovement
-from entropy_search import EntropySearch, NUMBER_OF_CAND_SAMPLES, NUMBER_OF_REPRESENTER_POINTS
+from ..acquisition_functions.expected_improvement import ExpectedImprovement
+from ..acquisition_functions.entropy_search import EntropySearch, NUMBER_OF_CAND_SAMPLES, NUMBER_OF_REPRESENTER_POINTS
 
 class EntropySearchBigData(EntropySearch):
     def __init__(self, comp, vals, gp, cost_gp=None):
