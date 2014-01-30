@@ -8,8 +8,8 @@ Provides common set up routine for tests.
 from __future__ import absolute_import #turns off relative imports
 import unittest
 import gp
-from gp_model import GPModel, getNumberOfParameters, BigData, Polynomial3, Normalized_Polynomial3
-import support.hyper_parameter_sampling as hps
+from ..gp_model import GPModel, getNumberOfParameters, BigData, Polynomial3, Normalized_Polynomial3
+from ..support import hyper_parameter_sampling as hps
 import numpy.random as npr
 import numpy as np
 import scipy.linalg as spla
@@ -25,7 +25,7 @@ Scale/distribution of the inputs, i.e. factor to the uniform distribution.
 scale = 1 #25
 
 def makeObservations(dimension, scale, ground_truth=None):
-    N = npr.randint(1,251)
+    N = npr.randint(2,25)
     def mod(x): return x % scale
     vec_mod = np.vectorize(mod)
     #uniformly distributed observations in [0,1) * scale
