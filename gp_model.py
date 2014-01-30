@@ -9,6 +9,54 @@ import numpy as np
 import scipy.linalg as spla
 import copy
 
+def fetchKernel(covar_name):
+    '''
+    Returns the corresponding function and gradient function for the given covariance function name.
+    Searches the spearmint gp class and this one.
+    Args:
+        covar_name: the name of the covariance function (String)
+    Returns:
+        a tuple of two functions: the covariance function and the gradient function
+    '''
+    try:
+        f = getattr(gp, covar_name)
+        df = getattr(gp, 'grad_' + covar_name)
+        return (f,df)
+    except:
+        f = globals()[covar_name]
+        df = globals()['grad_' + covar_name]
+        return (f, df)
+    
+    
+def getNumberOfParameters(covarname, input_dimension):
+    '''
+    Returns the number of parameters the kernel has.
+    Args:
+        covarname: the name of the covariance function
+        input_dimension: dimensionality of the input arguments
+    Returns:
+        the number of parameters
+    '''
+    try:
+        #try to find covariance function in spearmint GP class
+        getattr(gp, covarname)
+        #then it is just the input dimension
+        return input_dimension
+    except:
+        if covarname == 'Polynomial3':
+            return 1
+        elif covarname == 'Normalized_Polynomial3':
+            return getNumberOfParameters('Polynomial3', input_dimension)
+        elif covarname == 'BigData':
+            return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension-1)
+        elif covarname == 'CostKernel':
+            return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension-1)
+        elif covarname == 'CostKernel2':
+            return getNumberOfParameters('Polynomial3', input_dimension)+getNumberOfParameters('Matern52', input_dimension)
+        else:
+            raise NotImplementedError('The given covariance function (' + covarname + ') was not found.')
+        
+        
 def _polynomial3_raw(ls, x1, x2=None, value=True, grad=False):
     factor = 1
     if x2 is None:
@@ -88,99 +136,202 @@ def grad_Normalized_Polynomial3(ls, x1, x2=None):
         dk[i][0] = 1/sqrt_kxx*(dk[i][0]/sqrt_kyy-0.5*kxy*grad_Polynomial3(ls, x2)[0]/(sqrt_kyy**3))
     return dk
 
-def _sum_kernel_raw(kf1, kf2, ls1, ls2, x11, x12, x21=None, x22=None, value=True, grad=False):
+def _sum_kernel_raw(kf1, kf2, ls1, ls2, x1, x2=None, value=True, grad=False):
+    '''
+    Sum of kernels, i.e. kernel is of the form k(x,y)=k1(x,y)+k2(x,y).
+    Args:
+        kf1: the first kernel function (with standard Spearmint inputs, 
+            i.e. CAN NOT be e.g. this kernel)
+        kf2: the second kernel function (of standard Spearmint inputs)
+        ls1: length scales for first kernel
+        ls2: length scales for second kernel
+        x11: first argument for both kernels
+        x22: second argument for both kernels
+        value: compute value of the kernel
+        grad: compute gradient of the kernel
+    Returns:
+        either tuple (value, gradient) or single element
+    '''
+    if not grad:
+        #only the value is of interest
+        k1 = kf1(ls1, x1, x2)
+        k2 = kf2(ls2, x1, x2)
+        k = k1+k2
+        return k
+    else:
+        (k1, dk1) = kf1(ls1, x1, x2, True)
+        (k2, dk2) = kf2(ls2, x1, x2, True)
+        #sum rule
+        dk = dk1 + dk2
+        if not value:
+            #we care only for the gradient
+            return dk
+        k = k1+k2
+        return (k,dk)
+    
+def _product_kernel_raw(kf1, kf2, ls1, ls2, x1, x2=None, value=True, grad=False):
+    '''
+    Sum of kernels, i.e. kernel is of the form k(x,y)=k1(x,y)+k2(x,y).
+    Args:
+        kf1: the first kernel function (with standard Spearmint inputs, 
+            i.e. CAN NOT be e.g. this kernel)
+        kf2: the second kernel function (of standard Spearmint inputs)
+        ls1: length scales for first kernel
+        ls2: length scales for second kernel
+        x11: first argument for both kernels
+        x22: second argument for both kernels
+        value: compute value of the kernel
+        grad: compute gradient of the kernel
+    Returns:
+        either tuple (value, gradient) or single element
+    '''
+    if not grad:
+        #only the value is of interest
+        k1 = kf1(ls1, x1, x2)
+        k2 = kf2(ls2, x1, x2)
+        k = k1*k2
+        return k
+    else:
+        (k1, dk1) = kf1(ls1, x1, x2, True)
+        (k2, dk2) = kf2(ls2, x1, x2, True)
+        #product rule
+        dk = dk1*k2 + k1*dk2
+        if not value:
+            #we care only for the gradient
+            return dk
+        k = k1*k2
+        return (k,dk)
+
+def _sum_kernel_raw_d(kf1, kf2, ls1, ls2, x11, x12, x21=None, x22=None, value=True, grad=False):
+    '''
+    Sum of kernels with disjunct inputs. I.e. kernel is of the form:
+    k((x1,x2),(y1,y2))=k1(x1,y1)+k2(x2,y2)
+    Args:
+        kf1: the first kernel function (with standard Spearmint inputs, 
+            i.e. CAN NOT be e.g. this kernel)
+        kf2: the second kernel function (of standard Spearmint inputs)
+        ls1: length scales for first kernel
+        ls2: length scales for second kernel
+        x11: first argument for first kernel
+        x12: first argument for second kernel
+        x21: second argument for first kernel
+        x22: second argument for second kernel
+        value: compute value of the kernel
+        grad: compute gradient of the kernel
+    Returns:
+        either tuple (value, gradient) or single element
+    '''
+    num_of_elements = x11.shape[0]
     if not grad:
         #only the value is of interest
         k1 = kf1(ls1, x11, x21)
         k2 = kf2(ls2, x12, x22)
-        k = np.array([k1[i]+k2[i] for i in range(0, x11.shape[0])])
+        k = np.array([k1[i]+k2[i] for i in range(0, num_of_elements)])
         return k
     else:
         (k1, dk1) = kf1(ls1, x11, x21, True)
-        (k2, dk2) = kf2(ls1, x12, x22, True)
+        (k2, dk2) = kf2(ls2, x12, x22, True)
         #sum rule
-        dk = dk1+dk2
+        #dk = dk1+dk2
+        dk = np.array([np.concatenate((dk1[i], dk2[i]), axis=1) 
+                       for i in range(0, num_of_elements)])
         if not value:
             #we care only for the gradient
             return dk
-        k = np.array([k1[i]+k2[i] for i in range(0, x11.shape[0])])
+        k = np.array([k1[i]+k2[i] for i in range(0, num_of_elements)])
         return (k,dk)
+    
+def _product_kernel_raw_d(kf1, kf2, ls1, ls2, x11, x12, x21=None, x22=None, value=True, grad=False):
+    '''
+    Product of kernels with disjunct inputs. I.e. kernel is of the form:
+    k((x1,x2),(y1,y2))=k1(x1,y1)*k2(x2,y2)
+    Args:
+        kf1: the first kernel function (with standard Spearmint inputs, 
+            i.e. CAN NOT be e.g. this kernel)
+        kf2: the second kernel function (of standard Spearmint inputs)
+        ls1: length scales for first kernel
+        ls2: length scales for second kernel
+        x11: first argument for first kernel
+        x12: first argument for second kernel
+        x21: second argument for first kernel
+        x22: second argument for second kernel
+        value: compute value of the kernel
+        grad: compute gradient of the kernel
+    Returns:
+        either tuple (value, gradient) or single element 
+    '''
+    num_of_elements = x11.shape[0]
+    if not grad:
+        #only the value is of interest
+        k1 = kf1(ls1, x11, x21)
+        k2 = kf2(ls2, x12, x22)
+        k = np.array([k1[i]*k2[i] for i in range(0, num_of_elements)])
+        return k
+    else:
+        (k1, dk1) = kf1(ls1, x11, x21, True)
+        (k2, dk2) = kf2(ls2, x12, x22, True)
+        #product rule
+        dk = np.array([np.concatenate((dk1[i]*k2[i], k1[i]*dk2[i]), axis=1) 
+                       for i in range(0, num_of_elements)])
+        if not value:
+            #we care only for the gradient
+            return dk
+        k = np.array([k1[i]*k2[i] for i in range(0, num_of_elements)])
+        return (k,dk)
+    
+def _CostKernel2_raw(ls, x1, x2=None, value=True, grad=False):
+    p = getNumberOfParameters('Polynomial3', x1.shape[1])
+    ls1 = ls[:p]
+    ls2 = ls[p:]
+    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, True, grad)
+
+def CostKernel2(ls, x1, x2=None, grad=False):
+    return _CostKernel2_raw(ls, x1, x2, grad)
+
+def grad_CostKernel2(ls, x1, x2=None):
+    return _CostKernel2_raw(ls, x1, x2, False, True)
     
 def CostKernel(ls, x1, x2=None, grad=False):
     ls1 = ls[:1]
     ls2 = ls[1:]
     x11 = x1[:,:1]
+    x12 = x1[:,1:]
     x21 = None
+    x22 = None
     if x2 is not None:
         x21 = x2[:,:1]
-    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x11, x1, x21, x2, True, grad)
+        x22 = x2[:,1:]
+    return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, True, grad)
 
 def grad_CostKernel(ls, x1, x2=None):
     ls1 = ls[:1]
-    ls2 = ls[2:]
+    ls2 = ls[1:]
     x11 = x1[:,:1]
+    x12 = x1#[:,1:]
+    x21 = None
+    x22 = None
     if x2 is not None:
-        x21 = x1[:,:1]
-    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x11, x1, x21, x2, False, True)
-    
+        x21 = x2[:,:1]
+        x22 = x2#[:,1:]
+    return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, False, True)
+
 def _bigData_raw(ls, x1, x2=None, value=True, grad=False):
-    k1x2 = None
-    k2x2 = None
-    #separate input vector(s) after first dimension
-    k1x1 = x1[:,:1] #get first entry of each vector
-    k2x1 = x1[:,1:] #get the rest
+    x11 = x1[:,:1] #get first entry of each vector
+    x12 = x1[:,1:] #get the rest
+    x21 = None
+    x22 = None
     if not(x2 is None):
-        k1x2 = x2[:,:1]
-        k2x2 = x2[:,1:]
-    
-    if not grad:
-        #only the value is of interest
-        k1 = Polynomial3(ls[:1], k1x1, k1x2)
-        k2 = gp.Matern52(ls[1:], k2x1, k2x2)
-        k = np.array([k1[i]*k2[i] for i in range(0, x1.shape[0])])
-        return k
-    else:
-        (k1, dk1) = Polynomial3(ls[:1], k1x1, k1x2, grad)
-        (k2, dk2) = gp.Matern52(ls[1:], k2x1, k2x2, grad)
-        #product rule
-        dk = np.array([np.concatenate((dk1[i]*k2[i], k1[i]*dk2[i]), axis=1) for i in range(0, x1.shape[0])])
-        if not value:
-            #we care only for the gradient
-            return dk
-        k = np.array([k1[i]*k2[i] for i in range(0, x1.shape[0])])
-        return (k,dk)
+        x21 = x2[:,:1]
+        x22 = x2[:,1:]
+    ls1 = ls[:1]
+    ls2 = ls[1:]
+    return _product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 
 def grad_BigData(ls,x1,x2=None):
     return _bigData_raw(ls, x1, x2, value=False, grad=True)
 
 def BigData(ls, x1, x2=None, grad=False):
     return _bigData_raw(ls, x1, x2, True, grad)
-
-def getNumberOfParameters(covarname, input_dimension):
-    '''
-    Returns the number of parameters the kernel has.
-    Args:
-        covarname: the name of the covariance function
-        input_dimension: dimensionality of the input arguments
-    Returns:
-        the number of parameters
-    '''
-    try:
-        #try to find covariance function in spearmint GP class
-        getattr(gp, covarname)
-        #then it is just the input dimension
-        return input_dimension
-    except:
-        if covarname == 'Polynomial3':
-            return 1
-        elif covarname == 'Normalized_Polynomial3':
-            return getNumberOfParameters('Polynomial3', input_dimension)
-        elif covarname == 'BigData':
-            return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension-1)
-        elif covarname == 'CostKernel':
-            return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension)
-        else:
-            raise NotImplementedError('The given covariance function (' + covarname + 'was not found.')
         
 
 

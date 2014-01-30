@@ -16,7 +16,7 @@ from multiprocessing import Pool
 from support.hyper_parameter_sampling import sample_hyperparameters
 import traceback
 from helpers import log
-from gp_model import BigData, getNumberOfParameters, Polynomial3, grad_BigData, CostKernel
+from gp_model import getNumberOfParameters, fetchKernel
 
 '''
 The number of candidates if using local search.
@@ -70,12 +70,13 @@ def _call_minimizer(cand, func, arguments, opt_bounds):
         raise e
 
 class OptSizeChooser(object):
-    def __init__(self, expt_dir, covar="Matern52", cost_covar='Polynomial3', mcmc_iters=10,
+    def __init__(self, expt_dir, covar='BigData', cost_covar='Polynomial3', mcmc_iters=10,
                  pending_samples=100, noiseless=False, burnin=100,
                  grid_subset=20, acquisition_function='EntropySearchBigData', 
                  model_costs=True, do_local_search=True, 
-                 local_search_acquisition_function='ExpectedImprovement'):
-        #TODO: use arguments!
+                 local_search_acquisition_function='ExpectedImprovement',
+                 pool_size=16):
+        #TODO: use arguments! (acquisition functions)
         '''
         Constructor
         '''
@@ -88,15 +89,15 @@ class OptSizeChooser(object):
         self._hyper_samples = []
         self._cost_function_hyper_parameter_samples = []
         self._is_initialized = False
-        #TODO: generalize
+
+        self._pool_size = pool_size
         self._mcmc_iters = mcmc_iters
         self._noiseless = noiseless
         self._burnin = burnin
-        self._covar = 'BigData'
-        self._cov_func = BigData #getattr(gp, covar)
-        self._covar_derivative = grad_BigData #getattr(gp, "grad_" + covar)
-        self._cost_covar = 'CostKernel'
-        self._cost_cov_func = CostKernel
+        self._covar = covar
+        self._cov_func, self._covar_derivative = fetchKernel(covar)
+        self._cost_covar = cost_covar
+        self._cost_cov_func, _ = fetchKernel(cost_covar)
         self._do_local_search = True
         self._model_costs = True
         #TODO: if false check that acquisition function can handle that
@@ -170,10 +171,11 @@ class OptSizeChooser(object):
         cand = grid[candidates,:]
         if self._do_local_search:
             cand = _preselect_candidates(NUMBER_OF_CANDIDATES, cand, comp, vals, 
-                                         models, cost_models, self._preselection_ac_func)
+                                         models, cost_models, self._preselection_ac_func, self._pool_size)
         ac_funcs = _initialize_acquisition_functions(self._ac_func, comp, vals, models, cost_models)
         #overall results of the acquisition functions for each candidate over all models
-        overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, self.grid_subset)
+        overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, self.grid_subset, 
+                                                                      self._pool_size)
             
         best_cand = np.argmax(overall_ac_value)
         if self._do_local_search:
@@ -242,7 +244,7 @@ def _initialize_acquisition_functions(ac_func, comp, vals, models, cost_models):
         ac_funcs.append(ac_func(comp, vals, models[i], cost_model))
     return ac_funcs
     
-def _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size=16):
+def _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size):
     '''
     Applies the given acquisition function over all candidates for each model in parallel.
     Calls _iterate_over_candidates for that purpose.
@@ -257,7 +259,8 @@ def _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size=16):
     '''
     
     #Prepare multiprocessing
-    log("going to use " + str(pool_size)  + " worker threads")
+    log("Employing " + str(pool_size)  + " threads to compute acquisition function value for "
+        + str(cand.shape[0]) + "candidates.")
     pool = Pool(pool_size)
     results = []
     #Create a GP for each hyper-parameter sample
@@ -279,7 +282,7 @@ def _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size=16):
             log("Worker Thread reported exception:" + str(ex) + "\n Action: ignoring result")
     return overall_ac_value
                 
-def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, cost_models, ac_func):
+def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, cost_models, ac_func, pool_size):
     '''
     Evaluates the acquisition function for all candidates over all models. Then selects the
     number_of_points_to_return/2 best and optimizes them locally. 
@@ -294,6 +297,7 @@ def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, 
         models: a list of Gaussian processes that model the objective function
         cost_models: OPTIONAL. will only be used if the length of the list is equal to the length of the list of models
         ac_func: an acquisition function that is capable of computing gradients (will be initialized)
+        pool_size: the number of threads to use
     Returns:
         A numpy matrix consisting of the number_of_points_to_return best points 
         
@@ -302,7 +306,7 @@ def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, 
     #add 10 random candidates around the current minimum
     cand = np.vstack((np.random.randn(10,comp.shape[1])*0.001 +
                            comp[np.argmin(vals),:], cand))
-    overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand)
+    overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size)
     best_cands_indices = overall_ac_value.argsort()[-number_of_points_to_return/2:][::-1]
     best_cands = cand[best_cands_indices, :]
     locally_optimized = np.zeros(best_cands.shape)
@@ -311,8 +315,7 @@ def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, 
         opt_bounds.append((0, 1))
     dimension = (-1, cand.shape[0])
     
-    pool_size = 16 #TODO: generalize
-    log("going to use " + str(pool_size)  + " worker threads")
+    log("Employing " + str(pool_size)  + " threads for local optimization of candidates.")
     pool = Pool(pool_size)
     #call minimizer in parallel
     results = [pool.apply_async(_call_minimizer, (best_cands[i], _compute_negative_gradient_over_hypers, 

@@ -6,13 +6,14 @@ Created on 16.01.2014
 Tests certain abilities of some of the covariance functions.
 '''
 import unittest
-from test.abstract_test import AbstractTest, d, scale
+from ...abstract_test import AbstractTest, d, scale
 import numpy as np
 import scipy.linalg as spla
 import numpy.random as npr
-from model.gp.gp_model import Polynomial3, grad_Polynomial3, getNumberOfParameters, \
-BigData, grad_BigData, GPModel, Normalized_Polynomial3, grad_Normalized_Polynomial3
-from support.hyper_parameter_sampling import sample_hyperparameters
+from ....gp_model import Polynomial3, grad_Polynomial3, getNumberOfParameters, \
+BigData, grad_BigData, GPModel, Normalized_Polynomial3, grad_Normalized_Polynomial3, \
+CostKernel, grad_CostKernel, CostKernel2, grad_CostKernel2
+from ....support.hyper_parameter_sampling import sample_hyperparameters
 import gp
 
 def _invert_sign(grad_cov):
@@ -67,9 +68,9 @@ class Test(AbstractTest):
     def testPolynomial3(self):
         self._testCovar('Polynomial3', Polynomial3, _invert_sign(grad_Polynomial3))
         
-    def testNormalizedPolynomial3(self):
-        self._testCovar('Normalized_Polynomial3', Normalized_Polynomial3, _invert_sign(grad_Normalized_Polynomial3))
-          
+#     def testNormalizedPolynomial3(self):
+#         self._testCovar('Normalized_Polynomial3', Normalized_Polynomial3, _invert_sign(grad_Normalized_Polynomial3))
+#           
     def testARDSE(self):
         name = "ARDSE"
         cov = getattr(gp, name)
@@ -84,6 +85,17 @@ class Test(AbstractTest):
           
     def testBigData(self):
         self._testCovar('BigData', BigData,  _invert_sign(grad_BigData))
+         
+#     def testBigDataLegacy(self):
+#         self._testCovar('BigData', BigData_legacy, _invert_sign(grad_BigData_legacy))
+        
+    def testCostKernel(self):
+        self._testCovar('CostKernel', CostKernel,  _invert_sign(grad_CostKernel))
+    
+    def testCostKernel2(self):
+        self._testCovar('CostKernel2', CostKernel2,  _invert_sign(grad_CostKernel2))
+        
+    
           
     def testBigDataKernelIsMonotone(self):
         '''
@@ -122,8 +134,28 @@ class Test(AbstractTest):
             xstar[0][0]=xstar[0][0]+epsilon
             p2 = gp.predict(xstar)
             g2 = ground_truth(xstar)
-            assert(g2 <= g1)
+            if not g2 <= g1:
+                print ("Ground truth is not monotone!")
+                assert(g2<=g1)
             assert(p2 <= p1)
+            
+    def testProductKernelVsOriginalBigDataImpl(self):
+        '''
+        Compares the original implementation of the big data kernel against the
+        more generic implementation as product kernel. 
+        '''
+        
+        ls = npr.rand(getNumberOfParameters('BigData', d))
+        xstar = scale * npr.randn(1,d)
+        x2 = scale * npr.randn(1,d)
+        assert(np.allclose(BigData_legacy(ls, xstar), BigData(ls, xstar)))
+        assert(np.allclose(BigData_legacy(ls, x2, xstar), BigData(ls, x2, xstar)))
+        assert(np.allclose(BigData_legacy(ls, self.X, xstar), BigData(ls, self.X, xstar)))
+        assert(np.allclose(BigData_legacy(ls, self.X), BigData(ls, self.X)))
+        
+        assert(np.allclose(grad_BigData_legacy(ls, xstar), grad_BigData(ls, xstar)))
+        assert(np.allclose(grad_BigData_legacy(ls, x2, xstar), grad_BigData(ls, x2, xstar)))
+        assert(np.allclose(grad_BigData_legacy(ls, self.X, xstar), grad_BigData(ls, self.X, xstar)))
             
 def _makeObservations(dimension, ground_truth):
     N = npr.randint(dimension**4,dimension**7)
@@ -134,6 +166,40 @@ def _makeObservations(dimension, ground_truth):
         X[i][0] = (npr.random())**2
     y = ground_truth(X)
     return (X,y)
+
+####Legacy code of the bigdata kernel.
+def _bigData_raw(ls, x1, x2=None, value=True, grad=False):
+    k1x2 = None
+    k2x2 = None
+    #separate input vector(s) after first dimension
+    k1x1 = x1[:,:1] #get first entry of each vector
+    k2x1 = x1[:,1:] #get the rest
+    if not(x2 is None):
+        k1x2 = x2[:,:1]
+        k2x2 = x2[:,1:]
+    
+    if not grad:
+        #only the value is of interest
+        k1 = Polynomial3(ls[:1], k1x1, k1x2)
+        k2 = gp.Matern52(ls[1:], k2x1, k2x2)
+        k = np.array([k1[i]*k2[i] for i in range(0, x1.shape[0])])
+        return k
+    else:
+        (k1, dk1) = Polynomial3(ls[:1], k1x1, k1x2, grad)
+        (k2, dk2) = gp.Matern52(ls[1:], k2x1, k2x2, grad)
+        #product rule
+        dk = np.array([np.concatenate((dk1[i]*k2[i], k1[i]*dk2[i]), axis=1) for i in range(0, x1.shape[0])])
+        if not value:
+            #we care only for the gradient
+            return dk
+        k = np.array([k1[i]*k2[i] for i in range(0, x1.shape[0])])
+        return (k,dk)
+    
+def grad_BigData_legacy(ls,x1,x2=None):
+    return _bigData_raw(ls, x1, x2, value=False, grad=True)
+
+def BigData_legacy(ls, x1, x2=None, grad=False):
+    return _bigData_raw(ls, x1, x2, True, grad)
 
 
 if __name__ == "__main__":
