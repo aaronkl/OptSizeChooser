@@ -290,6 +290,18 @@ def CostKernel2(ls, x1, x2=None, grad=False):
 
 def grad_CostKernel2(ls, x1, x2=None):
     return _CostKernel2_raw(ls, x1, x2, False, True)
+
+def _CostKernel3_raw(ls, x1, x2=None, value=True, grad=False):
+    p = getNumberOfParameters('Polynomial3', x1.shape[1])
+    ls1 = ls[:p]
+    ls2 = ls[p:]
+    return _product_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, True, grad)
+
+def CostKernel3(ls, x1, x2=None, grad=False):
+    return _CostKernel3_raw(ls, x1, x2, grad)
+
+def grad_CostKernel3(ls, x1, x2=None):
+    return _CostKernel3_raw(ls, x1, x2, False, True)
     
 def CostKernel(ls, x1, x2=None, grad=False):
     ls1 = ls[:1]
