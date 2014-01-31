@@ -19,12 +19,12 @@ class Visualizer():
         Constructor
         
         '''
-        self._number_of_plots = number_of_plots
+        self._number_of_plots = 2#number_of_plots
         
         fig, self._axarr = plt.subplots(self._number_of_plots, figsize=(20,12))
         fig.subplots_adjust(left=0.04, bottom=0.04, right=0.95, top=0.95,
                     wspace=0.5, hspace=0.5)
-        self.fig2, self._axarr2 = plt.subplots(self._number_of_plots / 2, 2, figsize=(20,12))
+        self.fig2, self._axarr2 = plt.subplots(self._number_of_plots, 2, figsize=(20,12))
 
         #plt.ion()
         #plt.show()
@@ -156,3 +156,30 @@ class Visualizer():
         self._axarr[index].fill_between(test_inputs[:, 1], upper_bound[:, 0], lower_bound[:, 0], facecolor='red')
         plt.draw()
         
+    def plot1Dgp(self, X, y, predict, index=0):
+  
+        self._axarr[index].clear()
+ 
+        self._axarr[index].plot(X, y, 'g+')
+            
+        x = np.linspace(0, 1, 100)[:, np.newaxis]
+
+        # all inputs are normalized by spearmint automatically, thus max_size = 1
+        test_inputs = np.ones((100, 1))
+        for i in range(0, 100):
+            test_inputs[i] = x[i]
+
+        (mean, variance) = predict(test_inputs, True)
+        lower_bound = np.zeros((100, 1))
+        for i in range(0, mean.shape[0]):
+            lower_bound[i] = mean[i] - math.sqrt(variance[i])
+        
+        upper_bound = np.zeros((100, 1))
+        for i in range(0, mean.shape[0]):
+            upper_bound[i] = mean[i] + math.sqrt(variance[i])
+        
+
+        self._axarr[index].plot(x, mean, 'b')
+        self._axarr[index].fill_between(test_inputs[:,0], upper_bound[:,0], lower_bound[:,0], facecolor='red')
+        plt.draw()
+        plt.show()
