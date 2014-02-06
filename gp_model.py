@@ -283,7 +283,7 @@ def _CostKernel2_raw(ls, x1, x2=None, value=True, grad=False):
     p = getNumberOfParameters('Polynomial3', x1.shape[1])
     ls1 = ls[:p]
     ls2 = ls[p:]
-    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, True, grad)
+    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, value, grad)
 
 def CostKernel2(ls, x1, x2=None, grad=False):
     return _CostKernel2_raw(ls, x1, x2, grad)
@@ -295,7 +295,7 @@ def _CostKernel3_raw(ls, x1, x2=None, value=True, grad=False):
     p = getNumberOfParameters('Polynomial3', x1.shape[1])
     ls1 = ls[:p]
     ls2 = ls[p:]
-    return _product_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, True, grad)
+    return _product_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, value, grad)
 
 def CostKernel3(ls, x1, x2=None, grad=False):
     return _CostKernel3_raw(ls, x1, x2, grad)
@@ -319,12 +319,12 @@ def grad_CostKernel(ls, x1, x2=None):
     ls1 = ls[:1]
     ls2 = ls[1:]
     x11 = x1[:,:1]
-    x12 = x1#[:,1:]
+    x12 = x1[:,1:]
     x21 = None
     x22 = None
     if x2 is not None:
         x21 = x2[:,:1]
-        x22 = x2#[:,1:]
+        x22 = x2[:,1:]
     return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, False, True)
 
 def _bigData_raw(ls, x1, x2=None, value=True, grad=False):

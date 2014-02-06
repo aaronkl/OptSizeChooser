@@ -90,8 +90,8 @@ class OptSizeChooser(object):
         self._cost_function_hyper_parameter_samples = []
         self._is_initialized = False
 
-        self._pool_size = pool_size
-        self._mcmc_iters = mcmc_iters
+        self._pool_size = int(pool_size)
+        self._mcmc_iters = int(mcmc_iters)
         self._noiseless = noiseless
         self._burnin = burnin
         self._covar = covar
