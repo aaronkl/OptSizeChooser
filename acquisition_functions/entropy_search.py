@@ -11,6 +11,7 @@ import numpy as np
 import numpy.random as npr
 from util import slice_sample
 from ..acquisition_functions.expected_improvement import ExpectedImprovement
+from ..support.hyper_parameter_sampling import handle_slice_sampler_exception
 
 '''
 The number of points used to represent/discretize Pmin.
@@ -26,6 +27,7 @@ NUMBER_OF_CAND_SAMPLES = 5
 The number of independent joint samples drawn for the representer points.
 '''
 NUMBER_OF_PMIN_SAMPLES = 20
+
 
 class EntropySearch(object):
     def __init__(self, comp, vals, gp, cost_gp=None):
@@ -63,7 +65,10 @@ class EntropySearch(object):
         for i in range(0,number_of_points):
             #this for loop ensures better mixing
             for c in range(0, chain_length):
-                starting_point = slice_sample(starting_point, log_proposal_measure)
+                try:
+                    starting_point = slice_sample(starting_point, log_proposal_measure)
+                except Exception as e:
+                    starting_point = handle_slice_sampler_exception(e, starting_point, log_proposal_measure)
             representer_points[i] = starting_point
         return representer_points
 
