@@ -12,7 +12,8 @@ import scipy.linalg as spla
 import numpy.random as npr
 from ....gp_model import Polynomial3, grad_Polynomial3, getNumberOfParameters, \
 BigData, grad_BigData, GPModel, Normalized_Polynomial3, grad_Normalized_Polynomial3, \
-CostKernel, grad_CostKernel, CostKernel2, grad_CostKernel2
+CostKernel, grad_CostKernel, CostKernel2, grad_CostKernel2, Linear, grad_Linear, LogLinear, \
+grad_LogLinear
 from ....support.hyper_parameter_sampling import sample_hyperparameters
 import gp
 
@@ -94,7 +95,12 @@ class Test(AbstractTest):
     
     def testCostKernel2(self):
         self._testCovar('CostKernel2', CostKernel2,  _invert_sign(grad_CostKernel2))
-        
+
+    def testLinear(self):
+        self._testCovar('Linear', Linear, _invert_sign(grad_Linear))
+
+    def testLogLinear(self):
+        self._testCovar('LogLinear', LogLinear, _invert_sign(grad_LogLinear))
     
           
     def testBigDataKernelIsMonotone(self):
@@ -144,7 +150,7 @@ class Test(AbstractTest):
         Compares the original implementation of the big data kernel against the
         more generic implementation as product kernel. 
         '''
-        
+        #TODO: the implementation of the bigdata kernel changed!
         ls = npr.rand(getNumberOfParameters('BigData', d))
         xstar = scale * npr.randn(1,d)
         x2 = scale * npr.randn(1,d)

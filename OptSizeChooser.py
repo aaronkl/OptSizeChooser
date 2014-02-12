@@ -153,29 +153,19 @@ class OptSizeChooser(object):
         dimension = comp.shape[1]
         durs = durations[complete]
         
-        #TODO: remove
-        #for i in range(0, durs.shape[0]):
-        #    durs[i] = ((comp[i][0]*10+1)**3)*1000
-        
         if not self._is_initialized:
             self._real_init(dimension, comp, vals, durs)
 
         #initialize Gaussian processes
         (models, cost_models) = self._initialize_models(comp, vals, durs)
-        
-        #TODO: remove
-        #import support.Visualizer as vis
-        #vis.plot2DFunction(lambda x: models[len(models)-1].predict(x))
-        #vis.plot2DFunction(lambda x: cost_models[len(cost_models)-1].predict(x))
-               
+
         cand = grid[candidates,:]
         if self._do_local_search:
             cand = _preselect_candidates(NUMBER_OF_CANDIDATES, cand, comp, vals, 
                                          models, cost_models, self._preselection_ac_func, self._pool_size)
         ac_funcs = _initialize_acquisition_functions(self._ac_func, comp, vals, models, cost_models)
         #overall results of the acquisition functions for each candidate over all models
-        overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, self.grid_subset, 
-                                                                      self._pool_size)
+        overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, self._pool_size)
             
         best_cand = np.argmax(overall_ac_value)
         if self._do_local_search:
@@ -187,7 +177,7 @@ class OptSizeChooser(object):
         
     def _initialize_models(self, comp, vals, durs):
         '''
-        Initiales the models of the objective function and if required the models for the cost functions.
+        Initializes the models of the objective function and if required the models for the cost functions.
         Args:
             comp: the points where the objective function has been evaluated so far
             vals: the corresponding observed values

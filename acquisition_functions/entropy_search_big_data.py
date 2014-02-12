@@ -18,7 +18,7 @@ class EntropySearchBigData(EntropySearch):
         self._omega = np.random.normal(0, 1, NUMBER_OF_CAND_SAMPLES)
         self._gp = gp
         self._cost_gp = cost_gp
-        starting_point = np.array([comp[np.argmin(vals)][1,]]) #we don't want to slice sample over the first value
+        starting_point = comp[np.argmin(vals)][1:] #we don't want to slice sample over the first value
         self._ei = ExpectedImprovement(comp, vals, gp, cost_gp)
         representers = self.sample_representer_points(starting_point, 
                                                                            self._sample_measure, 
