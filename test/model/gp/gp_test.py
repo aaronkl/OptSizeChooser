@@ -3,12 +3,11 @@ Created on Oct 29, 2013
 
 @author: Simon Bartels
 '''
-from test.abstract_test import AbstractTest, d, scale, cov
 import unittest
+from ...abstract_test import AbstractTest, d, scale, cov
 import numpy as np
 import scipy.linalg as spla
 import numpy.random as npr
-from model.gp import gp_model
 
 class Test(AbstractTest):
     #def setUp(self):

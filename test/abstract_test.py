@@ -5,11 +5,12 @@ Created on 19.12.2013
 
 Provides common set up routine for tests.
 '''
-from __future__ import absolute_import #turns off relative imports
+#from __future__ import absolute_import #turns off relative imports
 import unittest
 import gp
-from ..gp_model import GPModel, getNumberOfParameters, BigData, Polynomial3, Normalized_Polynomial3
 from ..support import hyper_parameter_sampling as hps
+#import ..support.hyper_parameter_sampling as hps
+from ..gp_model import GPModel, getNumberOfParameters, BigData, Polynomial3, Normalized_Polynomial3
 import numpy.random as npr
 import numpy as np
 import scipy.linalg as spla
@@ -108,7 +109,7 @@ class AbstractTest(unittest.TestCase):
         for i in range(0, dfdx.shape[0]):
             for j in range(0, d):
                 signs_equal = np.sign(first_order_grad_approx[i,0,j]) == np.sign(dfdx[i,0,j])
-                if not signs_equal:
+                if not signs_equal and first_order_grad_approx[i,0,j] != 0:
                     print "gradient signs differ for element " + str(i) + " in dimension " + str(j) \
                     + "(" + str(first_order_grad_approx[i,0,j]) + " and " + str(dfdx[i,0,j]) + ")"
                     wrong_sign = wrong_sign + 1

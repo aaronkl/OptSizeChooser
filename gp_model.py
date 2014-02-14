@@ -45,6 +45,10 @@ def getNumberOfParameters(covarname, input_dimension):
     except:
         if covarname == 'Polynomial3':
             return 1
+        elif covarname == 'Linear':
+            return 1
+        elif covarname == 'LogLinear':
+            return getNumberOfParameters('Linear', input_dimension)
         elif covarname == 'Normalized_Polynomial3':
             return getNumberOfParameters('Polynomial3', input_dimension)
         elif covarname == 'BigData':
@@ -88,6 +92,44 @@ def _polynomial3_raw(ls, x1, x2=None, value=True, grad=False):
         #we want just the kernel value
         k = dot ** 3
         return k
+
+#TODO: generalize polynomial kernel???
+def Linear(ls, x1, x2=None, grad=False):
+    factor = 1
+    if x2 is None:
+        factor = 2
+        x2=x1
+    c = ls[0]
+    dot = np.dot(x1, x2.T) + c
+    if grad:
+        dk = np.array([factor * np.array([x1[i]]) for i in range(0, x1.shape[0])])
+        #because the spearmint implementations all invert the signs of their gradients we will do so as well
+        dk = -dk
+        return (dot, dk)
+    return dot
+
+def grad_Linear(ls, x1, x2=None):
+    factor = 1
+    if x2 is None:
+        factor = 2
+    dk = np.array([factor * np.array([x1[i]]) for i in range(0, x1.shape[0])])
+    #because the spearmint implementations all invert the signs of their gradients we will do so as well
+    dk = -dk
+    return dk
+
+#TODO: kernel has sharp edge close to zero. Is there something we can do about it?
+def LogLinear(ls, x1, x2=None, grad=False):
+    '''
+    Linear kernel that puts the inputs on a log scale.
+    '''
+    if x2 is not None:
+        return Linear(ls, np.log(x1+1e-15), np.log(x2+1e-15), grad)
+    return Linear(ls, np.log(x1+1e-15), None, grad)
+
+def grad_LogLinear(ls, x1, x2=None):
+    if x2 is not None:
+        return grad_Linear(ls, np.log(x1+1e-15), np.log(x2+1e-15))
+    return grad_Linear(ls, np.log(x1+1e-15), None)
 
 def grad_Polynomial3(ls, x1, x2=None):
     return _polynomial3_raw(ls, x1, x2, value=False, grad=True)
@@ -283,7 +325,7 @@ def _CostKernel2_raw(ls, x1, x2=None, value=True, grad=False):
     p = getNumberOfParameters('Polynomial3', x1.shape[1])
     ls1 = ls[:p]
     ls2 = ls[p:]
-    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, True, grad)
+    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, value, grad)
 
 def CostKernel2(ls, x1, x2=None, grad=False):
     return _CostKernel2_raw(ls, x1, x2, grad)
@@ -295,7 +337,7 @@ def _CostKernel3_raw(ls, x1, x2=None, value=True, grad=False):
     p = getNumberOfParameters('Polynomial3', x1.shape[1])
     ls1 = ls[:p]
     ls2 = ls[p:]
-    return _product_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, True, grad)
+    return _product_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, value, grad)
 
 def CostKernel3(ls, x1, x2=None, grad=False):
     return _CostKernel3_raw(ls, x1, x2, grad)
@@ -319,12 +361,12 @@ def grad_CostKernel(ls, x1, x2=None):
     ls1 = ls[:1]
     ls2 = ls[1:]
     x11 = x1[:,:1]
-    x12 = x1#[:,1:]
+    x12 = x1[:,1:]
     x21 = None
     x22 = None
     if x2 is not None:
         x21 = x2[:,:1]
-        x22 = x2#[:,1:]
+        x22 = x2[:,1:]
     return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, False, True)
 
 def _bigData_raw(ls, x1, x2=None, value=True, grad=False):
@@ -337,7 +379,7 @@ def _bigData_raw(ls, x1, x2=None, value=True, grad=False):
         x22 = x2[:,1:]
     ls1 = ls[:1]
     ls2 = ls[1:]
-    return _product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+    return _product_kernel_raw_d(LogLinear, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 
 def grad_BigData(ls,x1,x2=None):
     return _bigData_raw(ls, x1, x2, value=False, grad=True)
@@ -373,14 +415,7 @@ class GPModel(object):
         self._mean = mean
         self._noise = noise
         if cholesky is None:
-            try:
-                #try to find covariance function in spearmint GP class
-                self._cov_func = getattr(gp, covarname)
-                self._covar_derivative = getattr(gp, "grad_" + covarname)
-            except:
-                #try to find covariance funtion in THIS class
-                self._cov_func = globals()[covarname]
-                self._covar_derivative = globals()["grad_" + covarname]
+            self._cov_func, self._covar_derivative = fetchKernel(covarname)
             self._compute_cholesky()
         else:
             self._cov_func = cov_func
@@ -402,9 +437,15 @@ class GPModel(object):
             return func_m
         
         beta = spla.solve_triangular(self._L, kXstar, lower=True)
-        #TODO: change back
+
+        #old spearmint line - their kernels have k(X,X)=1
         #func_v = self._amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
-        func_v = self._compute_covariance(Xstar) - np.dot(beta.T, beta)
+
+        #prior variance is basically diag(k(X,X))
+        prior_variance = np.empty(Xstar.shape[0])
+        for i in range(0, Xstar.shape[0]):
+            prior_variance[i] = self._compute_covariance(np.array([Xstar[i]]))[0]
+        func_v = prior_variance - np.sum(beta ** 2, axis=0) #np.dot(beta.T, beta)
         return (func_m, func_v)
 
     def predict_vector(self, input_point):

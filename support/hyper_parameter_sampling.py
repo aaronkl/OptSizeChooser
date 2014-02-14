@@ -18,6 +18,39 @@ NOISE_SCALE = 0.1  # horseshoe prior
 AMP2_SCALE  = 1    # zero-mean log normal prior
 MAX_LS      = 2    # top-hat prior on length scales
 
+'''
+How often we try to restart the slice sampler if it shrank to zero.
+'''
+NUMBER_OF_RESTARTS = 3
+
+def handle_slice_sampler_exception(exception, starting_point, proposal_measure, opt_compwise=False):
+    '''
+    Handles slice sampler exceptions. If the slice sampler shrank to zero the slice sampler will be restarted
+    a few times. If this fails or if the exception was another this method will raise the given exception.
+    Args:
+        exception: the exception that occured
+        starting_point: the starting point that was used
+        proposal_measure: the used proposal measure
+        opt_compwise: how to set the compwise option
+    Returns:
+        the output of the slice sampelr
+    Raises:
+        Exception: the first argument
+    '''
+    if exception.message == "Slice sampler shrank to zero!":
+        log("Slice sampler shrank to zero! Action: trying to restart " + str(NUMBER_OF_RESTARTS)
+            + " times with same starting point")
+        restarts_left = NUMBER_OF_RESTARTS
+        while restarts_left > 0:
+            try:
+                return util.slice_sample(starting_point, proposal_measure, compwise=opt_compwise)
+            except Exception as e:
+                log("Restart failed. " + str(restarts_left) + " restarts left. Exception was: " + e.message)
+                restarts_left = restarts_left - 1
+        # if we leave the while loop we will raise the exception we got
+    raise exception
+
+
 def _sample_mean_amp_noise(comp, vals, cov_func, start_point, ls):
     default_noise = 1e-3
     #if we get a start point that consists only of two variables that means we don't care for the noise
@@ -50,7 +83,10 @@ def _sample_mean_amp_noise(comp, vals, cov_func, start_point, ls):
         lp -= 0.5 * (np.log(amp2) / AMP2_SCALE) ** 2
 
         return lp
-    return util.slice_sample(start_point, logprob, compwise=False)
+    try:
+        return util.slice_sample(start_point, logprob, compwise=False)
+    except Exception as e:
+        handle_slice_sampler_exception(e, start_point, logprob, False)
 
 def _sample_ls(comp, vals, cov_func, start_point, mean, amp2, noise):
     def logprob(ls):
@@ -65,7 +101,10 @@ def _sample_ls(comp, vals, cov_func, start_point, mean, amp2, noise):
         lp = (-np.sum(np.log(np.diag(chol))) - 0.5 * np.dot(vals - mean, solve))
         return lp
 
-    return util.slice_sample(start_point, logprob, compwise=True)
+    try:
+        return util.slice_sample(start_point, logprob, compwise=True)
+    except Exception as e:
+        handle_slice_sampler_exception(e, start_point, logprob, True)
 
 
 def sample_hyperparameters(mcmc_iters, noiseless, input_points, func_values, cov_func, noise, amp2, ls):
