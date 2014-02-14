@@ -34,12 +34,15 @@ class EntropySearch(object):
         '''
         Default constructor.
         '''
-        self._omega = np.random.normal(0, 1, NUMBER_OF_CAND_SAMPLES)
+        self._Omega = np.random.normal(0, 1, (NUMBER_OF_CAND_SAMPLES,
+                                              NUMBER_OF_PMIN_SAMPLES,
+                                              NUMBER_OF_REPRESENTER_POINTS+1))
         self._gp = gp
         self._cost_gp = cost_gp
         starting_point = comp[np.argmin(vals)]
         self._ei = ExpectedImprovement(comp, vals, gp, cost_gp)
-        self._representers = self.sample_representer_points(starting_point, 
+        self._representers = np.empty([NUMBER_OF_REPRESENTER_POINTS+1,starting_point.shape[0]])
+        self._representers[1:] = self.sample_representer_points(starting_point,
                                                                            self._log_proposal_measure, 
                                                                            NUMBER_OF_REPRESENTER_POINTS)
         
@@ -77,17 +80,17 @@ class EntropySearch(object):
             raise NotImplementedError("computing gradients not supported by this acquisition function")
         gain = 0
         log_proposal_vals = np.zeros(NUMBER_OF_REPRESENTER_POINTS)
-        for o in self._omega:
+        for o in self._Omega:
             pmin = self._compute_pmin_bins(self._gp, candidate, o)
             entropy_pmin = -np.dot(pmin, np.log(pmin+1e-10))
             #TODO:is it necessary to recompute the proposal measure values of the representer points using the GP copy?
             for i in range(0, NUMBER_OF_REPRESENTER_POINTS):
                 log_proposal_vals[i] = self._log_proposal_measure(self._representers[i])
             log_proposal = np.dot(log_proposal_vals, pmin)
-            
-            kl_divergence = entropy_pmin - log_proposal 
+            kl_divergence = entropy_pmin - log_proposal
             gain = gain + kl_divergence
-        return gain
+        #in the paper the acquisition function is minimized but we maximize
+        return -gain
     
     def _compute_pmin_bins(self, gp, candidate, omega):
         '''
@@ -100,19 +103,16 @@ class EntropySearch(object):
         Returns:
             a numpy array with a probability for each representer point
         '''
-        y = gp.sample(candidate,omega)
-        gp_copy = gp.copy()
-        gp_copy.update(candidate, y)
         pmin = np.zeros(NUMBER_OF_REPRESENTER_POINTS)
-        for s in xrange(0,NUMBER_OF_PMIN_SAMPLES):
-            omega2 = npr.normal(0, 1, NUMBER_OF_REPRESENTER_POINTS) #1-dimensional samples
-            vals = gp.drawJointSample(self._representers, omega2)
+        self._representers[0] = candidate
+        for o in omega:
+            vals = gp.drawJointSample(self._representers, o)
             mins = np.where(vals == vals.min())
             number_of_mins = len(mins)
             #mins is a tuple of single valued array
             for m in mins:
                 #have to extract the value of the array
-                pmin[m[0]] += 1/(number_of_mins)
+                pmin[m[0]-1] += 1/(number_of_mins)
         pmin = pmin / NUMBER_OF_PMIN_SAMPLES
         return pmin
     
