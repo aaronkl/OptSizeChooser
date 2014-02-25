@@ -81,7 +81,7 @@ def _sample_mean_amp_noise(comp, vals, cov_func, start_point, ls):
 
         # Roll in amplitude lognormal prior
         lp -= 0.5 * (np.log(amp2) / AMP2_SCALE) ** 2
-
+        #print "LP: " + str(lp)
         return lp
     try:
         return util.slice_sample(start_point, logprob, compwise=False)

@@ -28,7 +28,6 @@ The number of independent joint samples drawn for the representer points.
 '''
 NUMBER_OF_PMIN_SAMPLES = 20
 
-
 class EntropySearch(object):
     def __init__(self, comp, vals, gp, cost_gp=None):
         '''
@@ -45,12 +44,14 @@ class EntropySearch(object):
         self._representers[1:] = self.sample_representer_points(starting_point,
                                                                            self._log_proposal_measure, 
                                                                            NUMBER_OF_REPRESENTER_POINTS)
-        
+
+    #TODO: Is that correct? Do we not have to normalize EI?
     def _log_proposal_measure(self, x):
-        if np.any(x<0) or np.any(x>1):
+
+        if np.any(x < 0) or np.any(x > 1):
             return -np.inf
-        v = self._ei.compute(x)
-        return np.log(v+1e-10)
+        ei = self._ei.compute(x)
+        return np.log(ei + 1e-10)
 
     def sample_representer_points(self, starting_point, log_proposal_measure, number_of_points):
         '''
@@ -62,36 +63,47 @@ class EntropySearch(object):
         Returns:
             a numpy array containing the desired number of samples
         '''
-        representer_points = np.zeros([number_of_points,starting_point.shape[0]])
-        chain_length = 20 * starting_point.shape[0] 
+        #TODO: BUGFIX
+        representer_points = np.zeros([number_of_points, starting_point.shape[0]])
+
+        chain_length = 20 * starting_point.shape[0]
         #TODO: burnin?
-        for i in range(0,number_of_points):
+        for i in range(0, number_of_points):
             #this for loop ensures better mixing
             for c in range(0, chain_length):
                 try:
                     starting_point = slice_sample(starting_point, log_proposal_measure)
                 except Exception as e:
                     starting_point = handle_slice_sampler_exception(e, starting_point, log_proposal_measure)
+
             representer_points[i] = starting_point
+
         return representer_points
 
     def compute(self, candidate, compute_gradient = False):
+
         if compute_gradient:
             raise NotImplementedError("computing gradients not supported by this acquisition function")
-        gain = 0
+
+        loss = 0
         log_proposal_vals = np.zeros(NUMBER_OF_REPRESENTER_POINTS)
+
         for o in self._Omega:
             pmin = self._compute_pmin_bins(self._gp, candidate, o)
-            entropy_pmin = -np.dot(pmin, np.log(pmin+1e-10))
+            entropy_pmin = -np.dot(pmin, np.log(pmin + 1e-10))
             #TODO:is it necessary to recompute the proposal measure values of the representer points using the GP copy?
             for i in range(0, NUMBER_OF_REPRESENTER_POINTS):
                 log_proposal_vals[i] = self._log_proposal_measure(self._representers[i])
+
             log_proposal = np.dot(log_proposal_vals, pmin)
+
             kl_divergence = entropy_pmin - log_proposal
-            gain = gain + kl_divergence
+
+            loss = loss + kl_divergence
         #in the paper the acquisition function is minimized but we maximize
-        return -gain
-    
+
+        return -loss
+
     def _compute_pmin_bins(self, gp, candidate, omega):
         '''
         Computes a discrete belief over Pmin given a Gaussian process using bin method. Leaves
@@ -115,7 +127,7 @@ class EntropySearch(object):
                 pmin[m[0]-1] += 1/(number_of_mins)
         pmin = pmin / NUMBER_OF_PMIN_SAMPLES
         return pmin
-    
+
     def _compute_pmin_kde(self, gp):
         #FIXME: INCORRECT
         '''
@@ -139,3 +151,4 @@ class EntropySearch(object):
                     pmin[i]+=covar
         pmin = pmin / NUMBER_OF_PMIN_SAMPLES
         return pmin
+

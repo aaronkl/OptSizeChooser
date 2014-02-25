@@ -8,6 +8,8 @@ import gp
 import numpy as np
 import scipy.optimize as spo
 import util
+import copy
+
 from gp_model import GPModel
 from acquisition_functions.expected_improvement import ExpectedImprovement
 from acquisition_functions.entropy_search import EntropySearch
@@ -17,6 +19,7 @@ from support.hyper_parameter_sampling import sample_hyperparameters
 import traceback
 from helpers import log
 from gp_model import getNumberOfParameters, fetchKernel
+from spearmint.chooser.OptSizeChooser import gp_model
 
 '''
 The number of candidates if using local search.
@@ -24,59 +27,19 @@ Must be a factor of 2.
 '''
 NUMBER_OF_CANDIDATES = 100
 
+
 def init(expt_dir, arg_string):
     args = util.unpack_args(arg_string)
     return OptSizeChooser(expt_dir, **args)
 
-def _iterate_over_candidates(ac_func, cand):
-    '''
-    Is called by _apply_acquisition_function_asynchronously. Multiprocessing can only call functions that 
-    are pickable. Thus these method must be at the top level of a class. This is the workaround.
-    Args:
-        ac_func: the acquisition function
-        cand: the set of candidate points
-    Returns:
-        an array of acquisition function values (for each candidate one value)
-    '''
-    try:
-        #This is what we want to distribute over different processes
-        #We'll iterate over all candidates for each GP in a different thread
-        ac_values = np.zeros(len(cand))
-        #Iterate over all candidates
-        for i in xrange(0, len(cand)):
-            ac_values[i] = ac_func.compute(cand[i])
-        return ac_values
-    #This is to make the multi-process debugging easier
-    except Exception, e: 
-        print traceback.format_exc()
-        raise e
-    
-def _call_minimizer(cand, func, arguments, opt_bounds):
-    '''
-    This function is also desgined to be called in parallel. It calls a minmizer with the given argument.
-    Args:
-        cand: the starting point for the minimizer
-        func: the function to be minimized
-        arguments: for func
-        opt_bounds: the optimization bounds
-    Returns:
-        a triple consisting of the point, the value and the gradients
-        
-    '''
-    try:
-        return spo.fmin_l_bfgs_b(func, cand.flatten(), args=arguments, bounds=opt_bounds, disp=0)
-    except Exception, e: 
-        print traceback.format_exc()
-        raise e
 
 class OptSizeChooser(object):
-    def __init__(self, expt_dir, covar='BigData', cost_covar='Polynomial3', mcmc_iters=10,
+
+    def __init__(self, expt_dir, covar='Matern52', cost_covar='Matern52',
+                 mcmc_iters=10,
                  pending_samples=100, noiseless=False, burnin=100,
-                 grid_subset=20, acquisition_function='EntropySearchBigData', 
-                 model_costs=True, do_local_search=True, 
-                 local_search_acquisition_function='ExpectedImprovement',
+                 grid_subset=20,
                  pool_size=16):
-        #TODO: use arguments! (acquisition functions)
         '''
         Constructor
         '''
@@ -91,7 +54,9 @@ class OptSizeChooser(object):
         self._is_initialized = False
 
         self._pool_size = int(pool_size)
-        self._mcmc_iters = int(mcmc_iters)
+
+        self._mcmc_iters = mcmc_iters
+
         self._noiseless = noiseless
         self._burnin = burnin
         self._covar = covar
@@ -100,16 +65,11 @@ class OptSizeChooser(object):
         self._cost_cov_func, _ = fetchKernel(cost_covar)
         self._do_local_search = True
         self._model_costs = True
-        #TODO: if false check that acquisition function can handle that
-        self._ac_func = EntropySearchBigData
-        #the acquisition function to preselect candidates before giving it to the real acquisition function
-        #only used if do_local_search is true
-        #TODO: check that acquisition function computes gradients
-        self._preselection_ac_func = ExpectedImprovement
 
     def _real_init(self, dims, comp, values, durations):
         '''
-        Performs some more initialization with the first call of next(). Mainly slice sampling.
+        Performs some more initialization with the first call of next(). 
+        Burn in of the hyper parameters
         Args:
             dims: the dimension of the objective function
             comp: the points that have been evaluated so far
@@ -122,17 +82,17 @@ class OptSizeChooser(object):
         ls = np.ones(getNumberOfParameters(self._covar, dims))
 
         # Initial amplitude.
-        amp2 = np.std(values)+1e-4
+        amp2 = np.std(values) + 1e-4
 
         # Initial observation noise.
         noise = 1e-3
-        
+
         #burn in
-        self._hyper_samples = sample_hyperparameters(self._burnin, self._noiseless, comp, values, self._cov_func, 
+        self._hyper_samples = sample_hyperparameters(self._burnin, self._noiseless,
+                                                     comp, values, self._cov_func,
                                                      noise, amp2, ls)
-        
         if self._model_costs:
-            amp2 = np.std(durations)+1e-4
+            amp2 = np.std(durations) + 1e-4
             ls = np.ones(getNumberOfParameters(self._covar, dims))
             #burn in for the cost models
             self._cost_function_hyper_parameter_samples = sample_hyperparameters(self._burnin, self._noiseless, 
@@ -140,41 +100,72 @@ class OptSizeChooser(object):
                                                                                  self._cost_cov_func, noise, amp2, 
                                                                                  ls)
 
+#         import support.Visualizer as vis
+#         self._visualizer = vis.Visualizer(comp.shape[0] - 2)
+
     def next(self, grid, values, durations, candidates, pending, complete):
-        comp = grid[complete,:]
-        #TODO: find good initialization procedure!
+
+        comp = grid[complete, :]
         if comp.shape[0] < 2:
             c = grid[candidates[0]]
             log("Evaluating: " + str(c))
             return candidates[0]
-            #return (len(candidates)+1, c)
-                
+
         vals = values[complete]
         dimension = comp.shape[1]
         durs = durations[complete]
-        
+
         if not self._is_initialized:
             self._real_init(dimension, comp, vals, durs)
 
         #initialize Gaussian processes
-        (models, cost_models) = self._initialize_models(comp, vals, durs)
+        self._initialize_models(comp, vals, durs)
 
-        cand = grid[candidates,:]
-        if self._do_local_search:
-            cand = _preselect_candidates(NUMBER_OF_CANDIDATES, cand, comp, vals, 
-                                         models, cost_models, self._preselection_ac_func, self._pool_size)
-        ac_funcs = _initialize_acquisition_functions(self._ac_func, comp, vals, models, cost_models)
-        #overall results of the acquisition functions for each candidate over all models
-        overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, self._pool_size)
-            
-        best_cand = np.argmax(overall_ac_value)
-        if self._do_local_search:
-            log("Evaluating: " + str(cand[best_cand]))
-            return (len(candidates)+1, cand[best_cand])
-        else:
-            log("Evaluating: " + str(cand[best_cand]))
-            return int(candidates[best_cand])
-        
+        cand = grid[candidates, :]
+
+        #Plotting
+#         if cand.shape[1] == 1:
+#             self._visualizer.plot_gp(comp, vals, self._models[0], is_cost=False)
+#             self._visualizer.plot_gp(comp, vals, self._cost_models[0], is_cost=True)
+#         elif cand.shape[1] == 2:
+#             self._visualizer.plot_projected_gp(comp, vals, self._models[0], is_cost=False)
+#             self._visualizer.plot_projected_gp(comp, vals, self._cost_models[0], is_cost=True)
+
+        #self._visualizer.plot_two_dim_gp(comp, vals, self._models[0], is_cost=False)
+
+        #Select best candidates and optimize them locally based on EI
+        selected_candidates = self._preselect_candidates(NUMBER_OF_CANDIDATES,
+                                    cand, comp, vals)
+
+        #log("Employing " + str(self._pool_size)  + " threads to compute acquisition function value for "
+        #    + str(cand.shape[0]) + "candidates.")
+        #pool = Pool(self._pool_size)
+        #overall_ac_value = [pool.apply_async(self._entropy_search,
+        #                                     args=(self, selected_candidates, h))
+        #                                     for h in self._hyper_samples]
+        #pool.close()
+        #pool.join()
+
+        #Surface plot of the entropy
+#         self._visualizer.plot_entropy_surface(comp, vals, self._models[0], self._cost_models[0])
+
+        #Compute entropy for each gaussian process sample
+        overall_entropy = np.zeros(selected_candidates.shape[0])
+        for i in xrange(0, len(self._models)):
+            overall_entropy += self._entropy_search(selected_candidates, comp,
+                                                    vals, self._models[i],
+                                                    self._cost_models[i])
+
+        #if cand.shape[1] == 1:
+        #    self._visualizer.plot_entropy_one_dim(selected_candidates, overall_entropy)
+        #elif cand.shape[1] == 2:
+        #    self._visualizer.plot_entropy_two_dim(selected_candidates, overall_entropy)
+
+        best_cand = np.argmax(overall_entropy)
+
+        log("Evaluating: " + str(selected_candidates[best_cand]))
+        return (len(candidates) + 1, selected_candidates[best_cand])
+
     def _initialize_models(self, comp, vals, durs):
         '''
         Initializes the models of the objective function and if required the models for the cost functions.
@@ -193,164 +184,149 @@ class OptSizeChooser(object):
         log("last hyper parameters: " + str(self._hyper_samples[len(self._hyper_samples)-1]))
         self._hyper_samples = sample_hyperparameters(self._mcmc_iters, self._noiseless, comp, vals, 
                                                      self._cov_func, noise, amp2, ls)
-        
+
         if self._model_costs:
                 (_, noise, amp2, ls) = self._cost_function_hyper_parameter_samples[len(self._cost_function_hyper_parameter_samples)-1]
+
                 self._cost_function_hyper_parameter_samples = sample_hyperparameters(self._mcmc_iters, 
                                                                                      self._noiseless, comp, durs, 
                                                                                      self._cost_cov_func, noise, 
                                                                                      amp2, ls)
 
-        models = []
-        cost_models = []
+        self._models = []
+        self._cost_models = []
         for h in range(0, len(self._hyper_samples)-1):
             hyper = self._hyper_samples[h]
             gp = GPModel(comp, vals, hyper[0], hyper[1], hyper[2], hyper[3], self._covar)
-            models.append(gp)
+            self._models.append(gp)
             if self._model_costs:
                 cost_hyper = self._cost_function_hyper_parameter_samples[h]
                 cost_gp = GPModel(comp, durs, cost_hyper[0], cost_hyper[1], cost_hyper[2], cost_hyper[3], self._cost_covar)
-                cost_models.append(cost_gp)
-        return (models, cost_models)
-    
-def _initialize_acquisition_functions(ac_func, comp, vals, models, cost_models):
-    '''
-    Initializes an acquisition function for each model.
-    Args:
-        ac_func: an (UNINITIALIZED) acquisition function
-        comp: the points where the objective function has been evaluated so far
-        vals: the corresponding observed values
-        models: a list of models
-        cost_models: OPTIONAL. will only be used if the length of the list is equal to the length of the list of models
-     Returns:
-         a list of initialized acquisition functions
-    '''
-    model_costs = len(models) == len(cost_models)
-    cost_model = None
-    ac_funcs = []
-    for i in range(0, len(models)):
-        if model_costs:
-            cost_model = cost_models[i]
-        ac_funcs.append(ac_func(comp, vals, models[i], cost_model))
-    return ac_funcs
-    
-def _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size):
-    '''
-    Applies the given acquisition function over all candidates for each model in parallel.
-    Calls _iterate_over_candidates for that purpose.
-    Args:
-        ac_func: the acquisition function (will be initialized)
-        models: a list of models
-        cost_models: OPTIONAL. will only be used if the length of the list is equal to the length of the list of models
-        cand: a list of candidates to iterate over
-        pool_size: the number of worker threads to use
-    Returns:
-        a numpy vector of values, one entry for each entry in cand
-    '''
-    
-    #Prepare multiprocessing
-    log("Employing " + str(pool_size)  + " threads to compute acquisition function value for "
-        + str(cand.shape[0]) + "candidates.")
-    pool = Pool(pool_size)
-    results = []
-    #Create a GP for each hyper-parameter sample
-    for acf in ac_funcs:
-        #Iterate over all candidates for each GP in parallel
-        #apparently the last , needs to be there
-        results.append(pool.apply_async(_iterate_over_candidates, (acf, cand,)))
-    pool.close()
-    pool.join()
-    
-    overall_ac_value = np.zeros(len(cand))   
-    #get results
-    for res in results:
-        res.wait()
-        try:
-            ac_vals = res.get()
-            overall_ac_value+=ac_vals
-        except Exception, ex:
-            log("Worker Thread reported exception:" + str(ex) + "\n Action: ignoring result")
-    return overall_ac_value
-                
-def _preselect_candidates(number_of_points_to_return, cand, comp, vals, models, cost_models, ac_func, pool_size):
-    '''
-    Evaluates the acquisition function for all candidates over all models. Then selects the
-    number_of_points_to_return/2 best and optimizes them locally. 
-    (So the acquisition function MUST be capable of computing gradients)
-    This will be the first half of the array.
-    The other half is filled with the first number_of_points_to_return/2 entries in cand.
-    Args:
-        number_of_points_to_return: the number of candidates that are to be returned
-        cand: the available candidates
-        comp: the points where the objective function has been evaluated so far
-        vals: the corresponding observed values
-        models: a list of Gaussian processes that model the objective function
-        cost_models: OPTIONAL. will only be used if the length of the list is equal to the length of the list of models
-        ac_func: an acquisition function that is capable of computing gradients (will be initialized)
-        pool_size: the number of threads to use
-    Returns:
-        A numpy matrix consisting of the number_of_points_to_return best points 
-        
-    '''
-    ac_funcs = _initialize_acquisition_functions(ac_func, comp, vals, models, cost_models)
-    #add 10 random candidates around the current minimum
-    cand = np.vstack((np.random.randn(10,comp.shape[1])*0.001 +
-                           comp[np.argmin(vals),:], cand))
-    overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size)
-    best_cands_indices = overall_ac_value.argsort()[-number_of_points_to_return/2:][::-1]
-    best_cands = cand[best_cands_indices, :]
-    locally_optimized = np.zeros(best_cands.shape)
-    opt_bounds = []# optimization bounds
-    for i in xrange(0, best_cands.shape[1]):
-        opt_bounds.append((0, 1))
-    dimension = (-1, cand.shape[0])
-    
-    log("Employing " + str(pool_size)  + " threads for local optimization of candidates.")
-    pool = Pool(pool_size)
-    #call minimizer in parallel
-    results = [pool.apply_async(_call_minimizer, (best_cands[i], _compute_negative_gradient_over_hypers, 
-                                                  (ac_funcs, dimension), opt_bounds)) 
-               for i in range(0, best_cands.shape[0])]
-    pool.close()
-    pool.join()
-    
-    for i in range(0, best_cands.shape[0]):
-        res = results[i]
-        res.wait()
-        try:
-            p = res.get()[0]
-            locally_optimized[i] = p
-        except Exception, ex:
-            log("Worker Thread reported exception:" + str(ex) + "\n Action: ignoring result")
-    #remove duplicate entries and fill with best_cands    
-    preselected_candidates = list(set(tuple(p) for p in locally_optimized))
-    n = len(preselected_candidates)
-    for i in range(0, number_of_points_to_return/2-n):
-        preselected_candidates.append(best_cands[i])
-    
-    for i in range(0, number_of_points_to_return/2):
-        preselected_candidates.append(cand[i])
-    
-    #TODO: maybe it would be good to have random points here!
-    #return the number_of_points_to_return best candidates
-    return np.array(preselected_candidates)
-    
-def _compute_negative_gradient_over_hypers(x, acquisition_functions, dimension):
-    '''
-    Computes negative value and negative gradient of all acquisition functions in the list for one candidate.
-    The purpose of this function is to be called with a minimizer (and acquisition functions are usually maximized).
-    Args:
-        x: the candidate
-        acquisition_functions: a list of INITIALIZED acquisition functions
-        dimension: how to reshape the candidate
-    Returns:
-        a tuple (-sum acf(x), -sum grad_acf(x))
-    '''
-    grad_sum = np.zeros(x.shape).flatten()
-    #x = np.reshape(x, dimension)
-    val_sum = 0
-    for acf in acquisition_functions:
-        (val, grad) = acf.compute(x, True)
-        val_sum+=val
-        grad_sum+=grad.flatten()
-    return (-val_sum, -grad_sum)
+                self._cost_models.append(cost_gp)
+
+    def _preselect_candidates(self, number_of_points_to_return, cand, comp, vals):
+        '''
+        Evaluates the acquisition function for all candidates over all models. Then selects the
+        number_of_points_to_return/2 best and optimizes them locally. 
+        (So the acquisition function MUST be capable of computing gradients)
+        This will be the first half of the array.
+        The other half is filled with the first number_of_points_to_return/2 entries in cand.
+        Args:
+            number_of_points_to_return: the number of candidates that are to be returned
+            cand: the available candidates
+            comp: the points where the objective function has been evaluated so far
+            vals: the corresponding observed values
+            models: a list of Gaussian processes that model the objective function
+            cost_models: OPTIONAL. will only be used if the length of the list is equal to the length of the list of models
+            ac_func: an acquisition function that is capable of computing gradients (will be initialized)
+            pool_size: the number of threads to use
+        Returns:
+            A numpy matrix consisting of the number_of_points_to_return best points
+        '''
+
+        #ac_funcs = self._initialize_acquisition_functions(ac_func, comp, vals)
+
+        #add 10 random candidates around the current minimum
+        cand = np.vstack((np.random.randn(10, comp.shape[1]) * 0.001 +
+                               comp[np.argmin(vals), :], cand))
+
+        overall_ei_values = np.zeros(cand.shape[0])
+        for i in xrange(0, cand.shape[0]):
+            for m in self._models:
+                ei = ExpectedImprovement(comp, vals, m)
+                ei_value = ei.compute(cand[i])
+                overall_ei_values[i] += ei_value
+
+        #overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size)
+
+        best_cands_indices = overall_ei_values.argsort()[-number_of_points_to_return / 2:][::-1]
+        best_cands = cand[best_cands_indices, :]
+        locally_optimized = np.zeros([best_cands.shape[0], best_cands.shape[1]])
+        # optimization bounds
+        opt_bounds = []
+        for i in xrange(0, best_cands.shape[1]):
+            opt_bounds.append((0, 1))
+        dimension = (-1, cand.shape[0])
+
+        #log("Employing " + str(self._pool_size)  + " threads for local optimization of candidates.")
+        #pool = Pool(self._pool_size)
+        #call minimizer in parallel
+        #results = [pool.apply_async(_call_minimizer, (best_cands[i], _compute_negative_gradient_over_hypers, 
+        #                                              (comp, vals, dimension), opt_bounds)) 
+        #           for i in range(0, best_cands.shape[0])]
+        #pool.close()
+        #pool.join()
+#         pool = Pool(self._pool_size)
+#         results = [pool.apply_async(optimize_pt,args=(
+#                     c, opt_bounds, comp, vals, copy.copy(self))) for c in best_cands]
+#         for res in results:
+#             cand = np.vstack((cand, res.get(1e8)))
+#         pool.close()
+#         for i in range(0, best_cands.shape[0]):
+#             res = results[i]
+#             res.wait()
+#             try:
+#                 p = res.get()[0]
+#                 locally_optimized[i] = p
+#             except Exception, ex:
+#                 log("Worker Thread reported exception:" + str(ex) + "\n Action: ignoring result")
+
+        #TODO: Multithreading yes or no?
+        for i in xrange(0, best_cands.shape[0]):
+            res = spo.fmin_l_bfgs_b( self._compute_negative_gradient_over_hypers,
+                                        best_cands[i], args=(comp, vals),
+                                        bounds=opt_bounds, disp=0)
+            locally_optimized[i] = res[0]
+
+        #remove duplicate entries and fill with best_cands
+        preselected_candidates = list(set(tuple(p) for p in locally_optimized))
+        n = len(preselected_candidates)
+        for i in range(0, number_of_points_to_return / 2 - n):
+            preselected_candidates.append(best_cands[i])
+
+        for i in range(0, number_of_points_to_return / 2):
+            preselected_candidates.append(cand[i])
+
+#         if cand.shape[1] == 1:
+#             self._visualizer.plot_expected_improvement_one_dim(cand,
+#                                         overall_ei_values,
+#                                         best_cands,
+#                                         np.array(preselected_candidates))
+#         elif cand.shape[1] == 2:
+#             self._visualizer.plot_expected_improvement_two_dim(cand,
+#                                         overall_ei_values,
+#                                         best_cands,
+#                                         np.array(preselected_candidates))
+
+        return np.array(preselected_candidates)
+
+    def _compute_negative_gradient_over_hypers(self, x, comp, vals):
+        '''
+        Computes negative value and negative gradient of all acquisition functions in the list for one candidate.
+        The purpose of this function is to be called with a minimizer (and acquisition functions are usually maximized).
+        Args:
+            x: the candidate
+            acquisition_functions: a list of INITIALIZED acquisition functions
+            dimension: how to reshape the candidate
+        Returns:
+            a tuple (-sum acf(x), -sum grad_acf(x))
+        '''
+        grad_sum = np.zeros(x.shape).flatten()
+
+        val_sum = 0
+
+        for m in self._models:
+            ei = ExpectedImprovement(comp, vals, m)
+            ei_value, ei_grad = ei.compute(x, True)
+            val_sum += ei_value
+            grad_sum += ei_grad.flatten()
+        return (-val_sum, -grad_sum)
+
+    def _entropy_search(self, cand, comp, vals, model, cost_model):
+
+        entropy_estimator = EntropySearchBigData(comp, vals, model, cost_model)
+        entropy = np.zeros(cand.shape[0])
+        for i in xrange(0, cand.shape[0]):
+            entropy[i] = entropy_estimator.compute(cand[i])
+
+        return entropy

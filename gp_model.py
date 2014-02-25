@@ -438,6 +438,7 @@ class GPModel(object):
         
         beta = spla.solve_triangular(self._L, kXstar, lower=True)
 
+
         #old spearmint line - their kernels have k(X,X)=1
         #func_v = self._amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
 
@@ -446,6 +447,7 @@ class GPModel(object):
         for i in range(0, Xstar.shape[0]):
             prior_variance[i] = self._compute_covariance(np.array([Xstar[i]]))[0]
         func_v = prior_variance - np.sum(beta ** 2, axis=0) #np.dot(beta.T, beta)
+
         return (func_m, func_v)
 
     def predict_vector(self, input_point):
