@@ -438,7 +438,7 @@ class GPModel(object):
         
         beta = spla.solve_triangular(self._L, kXstar, lower=True)
 
-        #old spearmint line - their kernels have k(X,X)=1
+        #old spearmint line - their kernels have k(x,x)=1
         #func_v = self._amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
 
         #prior variance is basically diag(k(X,X))
@@ -500,7 +500,7 @@ class GPModel(object):
         x = np.array([x])
         cholsolve = spla.cho_solve((self._L, True), self._compute_covariance(self._X, x))
         cholesky = np.sqrt(self._compute_covariance(x, x) - 
-                           np.dot(self._compute_covariance(x, self._X), cholsolve))
+                           np.dot(self._compute_covariance(self._X, x).T, cholsolve)+self._noise)
         y = self.predict(x,False) + cholesky * omega
         #y is in the form [[value]] (1x1 matrix)
         return y[0][0]
@@ -526,11 +526,13 @@ class GPModel(object):
             Returns:
                 a numpy array (vector)
         '''
+        #the computation follows "Entropy Search for Information-Ecient Global Optimization"
+        # by Hennig and Schuler
         kXstar = self._compute_covariance(self._X, Xstar)
         cholsolve = spla.cho_solve((self._L, True), kXstar)
         Sigma = (self._compute_covariance(Xstar, Xstar) -
                   np.dot(kXstar.T, cholsolve))
-        cholesky = spla.cholesky(Sigma + 1e-6*np.eye(Sigma.shape[0]))
+        cholesky = spla.cholesky(Sigma + self._noise*np.eye(Sigma.shape[0]),lower=True)
         y = self.predict(Xstar,False) + np.dot(cholesky, omega)
         return y
     

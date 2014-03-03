@@ -19,11 +19,13 @@ class Test(AbstractTest):
         Assumes that the spear mint implementation is correct.
         '''
         #TODO: build a test for prediction with matrix as argument!
-        xstar = np.array([scale * npr.randn(d)])
+        #xstar = np.array([scale * npr.randn(d)])
+        n = npr.randint(1,5)
+        Xstar = npr.random([n,d])
         #xstar = self.X
         # The primary covariances for prediction.
         comp_cov   = cov(self, self.X)
-        cand_cross = cov(self, self.X, xstar)
+        cand_cross = cov(self, self.X, Xstar)
 
         # Compute the required Cholesky.
         obsv_cov = comp_cov + self.noise * np.eye(self.X.shape[0])
@@ -35,14 +37,14 @@ class Test(AbstractTest):
         # Predict the marginal means and variances at candidates.
         func_m = np.dot(cand_cross.T, alpha) + self.mean
         func_v = self.amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
-        (m,v) = self.gp.predict(xstar, variance=True)
-        assert(v>=0)
+        (m,v) = self.gp.predict(Xstar, variance=True)
+        assert(np.all(v>=0))
 #         print (func_m, m)
 #         print (func_v, v)
-        assert(abs(func_m-m) < 1e-50)
+        assert(np.all(abs(func_m-m) < 1e-50))
         print func_v
         print v
-        assert(abs(func_v-v) < 1e-50)
+        assert(np.all(abs(func_v-v) < 1e-50))
 
 
     def testGetGradients(self):
@@ -119,7 +121,7 @@ class Test(AbstractTest):
         Tests how the Gaussian process draws joint samples against a naive implementation.
         '''
         #TODO: fails too often!
-        N = npr.randint(1,5)
+        N = npr.randint(1,25)
         Xstar = scale * npr.randn(N,d)
         omega = npr.normal(0,1,N)
         y2 = self.gp.drawJointSample(Xstar, omega)
@@ -130,8 +132,9 @@ class Test(AbstractTest):
             self.gp.update(Xstar[i], y1[i])
         #the naive procedure is numerically unstable
         #that's why we tolerate a higher error here
-        #print y1
-        #print y2
+        #TODO: remove
+        print y1
+        print y2
         assert(spla.norm(y1 - y2) < 1e-5)
         
         

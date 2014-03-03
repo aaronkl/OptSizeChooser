@@ -10,7 +10,7 @@ import unittest
 import gp
 from ..support import hyper_parameter_sampling as hps
 #import ..support.hyper_parameter_sampling as hps
-from ..gp_model import GPModel, getNumberOfParameters, BigData, Polynomial3, Normalized_Polynomial3
+from ..gp_model import GPModel, getNumberOfParameters, fetchKernel
 import numpy.random as npr
 import numpy as np
 import scipy.linalg as spla
@@ -63,15 +63,14 @@ def cov(gp, x1, x2=None):
 class AbstractTest(unittest.TestCase):
     def setUp(self):
         seed = npr.randint(65000)
+        #seed = 55630
         print("using seed: " + str(seed))
         np.random.seed(seed)
         (X, y) = makeObservations(d, scale)
         self.X = X
         self.y = y
-        covarname = "ARDSE"
-        cov_func = getattr(gp, covarname)
-        covarname = "Normalized_Polynomial3"
-        cov_func = Normalized_Polynomial3
+        covarname = "Polynomial3"
+        cov_func, _ = fetchKernel(covarname)
         noise = 1e-6
         amp2 = np.std(y)+1e-4
         ls = np.ones(getNumberOfParameters(covarname, d))

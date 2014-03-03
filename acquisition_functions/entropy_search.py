@@ -34,6 +34,7 @@ class EntropySearch(object):
         '''
         Default constructor.
         '''
+        #FIXME: it appears this initialization is not correct!
         self._Omega = np.random.normal(0, 1, (NUMBER_OF_CAND_SAMPLES,
                                               NUMBER_OF_PMIN_SAMPLES,
                                               NUMBER_OF_REPRESENTER_POINTS+1))
@@ -84,13 +85,12 @@ class EntropySearch(object):
             pmin = self._compute_pmin_bins(self._gp, candidate, o)
             entropy_pmin = -np.dot(pmin, np.log(pmin+1e-10))
             #TODO:is it necessary to recompute the proposal measure values of the representer points using the GP copy?
-            for i in range(0, NUMBER_OF_REPRESENTER_POINTS):
-                log_proposal_vals[i] = self._log_proposal_measure(self._representers[i])
+            for i in range(1, NUMBER_OF_REPRESENTER_POINTS+1):
+                log_proposal_vals[i-1] = self._log_proposal_measure(self._representers[i])
             log_proposal = np.dot(log_proposal_vals, pmin)
             kl_divergence = entropy_pmin - log_proposal
             gain = gain + kl_divergence
-        #in the paper the acquisition function is minimized but we maximize
-        return -gain
+        return gain
     
     def _compute_pmin_bins(self, gp, candidate, omega):
         '''

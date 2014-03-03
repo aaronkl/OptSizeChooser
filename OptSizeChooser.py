@@ -92,8 +92,8 @@ class OptSizeChooser(object):
 
         self._pool_size = int(pool_size)
         self._mcmc_iters = int(mcmc_iters)
-        self._noiseless = noiseless
-        self._burnin = burnin
+        self._noiseless = bool(noiseless)
+        self._burnin = int(burnin)
         self._covar = covar
         self._cov_func, self._covar_derivative = fetchKernel(covar)
         self._cost_covar = cost_covar
@@ -203,7 +203,7 @@ class OptSizeChooser(object):
 
         models = []
         cost_models = []
-        for h in range(0, len(self._hyper_samples)-1):
+        for h in range(0, len(self._hyper_samples)):
             hyper = self._hyper_samples[h]
             gp = GPModel(comp, vals, hyper[0], hyper[1], hyper[2], hyper[3], self._covar)
             models.append(gp)
