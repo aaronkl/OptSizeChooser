@@ -9,28 +9,29 @@ and it ASSUMES that the first value of a point is the data set size.
 import numpy as np
 from ..acquisition_functions.expected_improvement import ExpectedImprovement
 from ..acquisition_functions.entropy_search import EntropySearch, NUMBER_OF_CAND_SAMPLES, \
-    NUMBER_OF_REPRESENTER_POINTS, NUMBER_OF_PMIN_SAMPLES
+    NUMBER_OF_REPRESENTER_POINTS, NUMBER_OF_PMIN_SAMPLES, sample_representer_points, \
+    NUMBER_OF_SAMPLE_LOCATIONS
 
 class EntropySearchBigData(EntropySearch):
     def __init__(self, comp, vals, gp, cost_gp=None):
         '''
         Default constructor.
         '''
-        self._Omega = np.random.normal(0, 1, (NUMBER_OF_CAND_SAMPLES,
-                                              NUMBER_OF_PMIN_SAMPLES,
-                                              NUMBER_OF_REPRESENTER_POINTS+1))
+        self._Omega = np.random.normal(0, 1, (NUMBER_OF_PMIN_SAMPLES,
+                                              NUMBER_OF_SAMPLE_LOCATIONS))
         self._gp = gp
         self._cost_gp = cost_gp
         starting_point = comp[np.argmin(vals)][1:] #we don't want to slice sample over the first value
         self._ei = ExpectedImprovement(comp, vals, gp, cost_gp)
-        representers = self.sample_representer_points(starting_point, 
+        representers = sample_representer_points(starting_point,
                                                                            self._sample_measure, 
                                                                            NUMBER_OF_REPRESENTER_POINTS)
 
-        self._representers = np.empty([NUMBER_OF_REPRESENTER_POINTS+1, comp.shape[1]])
+        #+1 because the candidate itself will be a representer
+        self._func_sample_locations = np.empty([NUMBER_OF_SAMPLE_LOCATIONS, comp.shape[1]])
         #the representers miss the first coordinate: we need to add it here.
         for i in range(0, NUMBER_OF_REPRESENTER_POINTS):
-            self._representers[i+1] = np.insert(representers[i], 0, 1) #set first value to one
+            self._func_sample_locations[i+1] = np.insert(representers[i], 0, 1) #set first value to one
         
     def compute(self, candidate, compute_gradient = False):
         kl = super(EntropySearchBigData, self).compute(candidate, compute_gradient)
