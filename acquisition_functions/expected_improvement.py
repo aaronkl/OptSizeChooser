@@ -53,7 +53,6 @@ class ExpectedImprovement():
         #in this case) we divide by 2 here.
         return (ei, amp2 * grad[0]/2)
     
-    
     def compute_with_prediction(self, func_m, func_v):
         # Expected improvement
         func_s = np.sqrt(func_v)

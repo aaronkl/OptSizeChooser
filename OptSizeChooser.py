@@ -55,7 +55,7 @@ class OptSizeChooser(object):
 
         self._pool_size = int(pool_size)
 
-        self._mcmc_iters = mcmc_iters
+        self._mcmc_iters = int(mcmc_iters)
 
         self._noiseless = noiseless
         self._burnin = burnin
@@ -100,8 +100,8 @@ class OptSizeChooser(object):
                                                                                  self._cost_cov_func, noise, amp2, 
                                                                                  ls)
 
-#         import support.Visualizer as vis
-#         self._visualizer = vis.Visualizer(comp.shape[0] - 2)
+        import Visualizer as vis
+        self._visualizer = vis.Visualizer(comp.shape[0] - 2)
 
     def next(self, grid, values, durations, candidates, pending, complete):
 
@@ -123,47 +123,33 @@ class OptSizeChooser(object):
 
         cand = grid[candidates, :]
 
-        #Plotting
-#         if cand.shape[1] == 1:
-#             self._visualizer.plot_gp(comp, vals, self._models[0], is_cost=False)
-#             self._visualizer.plot_gp(comp, vals, self._cost_models[0], is_cost=True)
-#         elif cand.shape[1] == 2:
-#             self._visualizer.plot_projected_gp(comp, vals, self._models[0], is_cost=False)
-#             self._visualizer.plot_projected_gp(comp, vals, self._cost_models[0], is_cost=True)
-
-        #self._visualizer.plot_two_dim_gp(comp, vals, self._models[0], is_cost=False)
-
         #Select best candidates and optimize them locally based on EI
         selected_candidates = self._preselect_candidates(NUMBER_OF_CANDIDATES,
                                     cand, comp, vals)
 
-        #log("Employing " + str(self._pool_size)  + " threads to compute acquisition function value for "
-        #    + str(cand.shape[0]) + "candidates.")
-        #pool = Pool(self._pool_size)
-        #overall_ac_value = [pool.apply_async(self._entropy_search,
-        #                                     args=(self, selected_candidates, h))
-        #                                     for h in self._hyper_samples]
-        #pool.close()
-        #pool.join()
-
-        #Surface plot of the entropy
-#         self._visualizer.plot_entropy_surface(comp, vals, self._models[0], self._cost_models[0])
-
-        #Compute entropy for each gaussian process sample
+        #Compute entropy for each Gaussian process
         overall_entropy = np.zeros(selected_candidates.shape[0])
         for i in xrange(0, len(self._models)):
             overall_entropy += self._entropy_search(selected_candidates, comp,
                                                     vals, self._models[i],
-                                                    self._cost_models[i])
+                                                    self._cost_models[i]) / len(self._models)
 
-        #if cand.shape[1] == 1:
-        #    self._visualizer.plot_entropy_one_dim(selected_candidates, overall_entropy)
-        #elif cand.shape[1] == 2:
-        #    self._visualizer.plot_entropy_two_dim(selected_candidates, overall_entropy)
+        #overall_entropy[~np.isfinite(overall_entropy)] = -np.inf
 
-        best_cand = np.argmax(overall_entropy)
+        print "best ai value: " + str(np.min(overall_entropy))
+        print "Overall entropy: " + str(overall_entropy)
+
+        #best_cand = np.argmax(overall_entropy)
+        best_cand = np.argmin(overall_entropy)
+
+        #self._visualizer.plot_projected_gp(comp, vals, self._cost_models[0], True)
+
+#         self._visualizer.plot(comp, vals, self._models[0],
+#                               self._cost_models[0],
+#                                selected_candidates[best_cand])
 
         log("Evaluating: " + str(selected_candidates[best_cand]))
+
         return (len(candidates) + 1, selected_candidates[best_cand])
 
     def _initialize_models(self, comp, vals, durs):
@@ -195,7 +181,7 @@ class OptSizeChooser(object):
 
         self._models = []
         self._cost_models = []
-        for h in range(0, len(self._hyper_samples)-1):
+        for h in range(0, len(self._hyper_samples)):
             hyper = self._hyper_samples[h]
             gp = GPModel(comp, vals, hyper[0], hyper[1], hyper[2], hyper[3], self._covar)
             self._models.append(gp)
@@ -224,52 +210,26 @@ class OptSizeChooser(object):
             A numpy matrix consisting of the number_of_points_to_return best points
         '''
 
-        #ac_funcs = self._initialize_acquisition_functions(ac_func, comp, vals)
-
         #add 10 random candidates around the current minimum
         cand = np.vstack((np.random.randn(10, comp.shape[1]) * 0.001 +
                                comp[np.argmin(vals), :], cand))
 
         overall_ei_values = np.zeros(cand.shape[0])
-        for i in xrange(0, cand.shape[0]):
-            for m in self._models:
-                ei = ExpectedImprovement(comp, vals, m)
+        for m in self._models:
+            ei = ExpectedImprovement(comp, vals, m)
+            for i in xrange(0, cand.shape[0]):
                 ei_value = ei.compute(cand[i])
                 overall_ei_values[i] += ei_value
 
-        #overall_ac_value = _apply_acquisition_function_asynchronously(ac_funcs, cand, pool_size)
-
         best_cands_indices = overall_ei_values.argsort()[-number_of_points_to_return / 2:][::-1]
         best_cands = cand[best_cands_indices, :]
+
         locally_optimized = np.zeros([best_cands.shape[0], best_cands.shape[1]])
         # optimization bounds
         opt_bounds = []
         for i in xrange(0, best_cands.shape[1]):
             opt_bounds.append((0, 1))
         dimension = (-1, cand.shape[0])
-
-        #log("Employing " + str(self._pool_size)  + " threads for local optimization of candidates.")
-        #pool = Pool(self._pool_size)
-        #call minimizer in parallel
-        #results = [pool.apply_async(_call_minimizer, (best_cands[i], _compute_negative_gradient_over_hypers, 
-        #                                              (comp, vals, dimension), opt_bounds)) 
-        #           for i in range(0, best_cands.shape[0])]
-        #pool.close()
-        #pool.join()
-#         pool = Pool(self._pool_size)
-#         results = [pool.apply_async(optimize_pt,args=(
-#                     c, opt_bounds, comp, vals, copy.copy(self))) for c in best_cands]
-#         for res in results:
-#             cand = np.vstack((cand, res.get(1e8)))
-#         pool.close()
-#         for i in range(0, best_cands.shape[0]):
-#             res = results[i]
-#             res.wait()
-#             try:
-#                 p = res.get()[0]
-#                 locally_optimized[i] = p
-#             except Exception, ex:
-#                 log("Worker Thread reported exception:" + str(ex) + "\n Action: ignoring result")
 
         #TODO: Multithreading yes or no?
         for i in xrange(0, best_cands.shape[0]):
@@ -286,17 +246,6 @@ class OptSizeChooser(object):
 
         for i in range(0, number_of_points_to_return / 2):
             preselected_candidates.append(cand[i])
-
-#         if cand.shape[1] == 1:
-#             self._visualizer.plot_expected_improvement_one_dim(cand,
-#                                         overall_ei_values,
-#                                         best_cands,
-#                                         np.array(preselected_candidates))
-#         elif cand.shape[1] == 2:
-#             self._visualizer.plot_expected_improvement_two_dim(cand,
-#                                         overall_ei_values,
-#                                         best_cands,
-#                                         np.array(preselected_candidates))
 
         return np.array(preselected_candidates)
 
@@ -324,8 +273,11 @@ class OptSizeChooser(object):
 
     def _entropy_search(self, cand, comp, vals, model, cost_model):
 
-        entropy_estimator = EntropySearchBigData(comp, vals, model, cost_model)
+        #entropy_estimator = EntropySearchBigData(comp, vals, model, cost_model)
+        entropy_estimator = EntropySearch(comp, vals, model, cost_model)
+
         entropy = np.zeros(cand.shape[0])
+
         for i in xrange(0, cand.shape[0]):
             entropy[i] = entropy_estimator.compute(cand[i])
 

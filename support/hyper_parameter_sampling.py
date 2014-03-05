@@ -86,7 +86,7 @@ def _sample_mean_amp_noise(comp, vals, cov_func, start_point, ls):
     try:
         return util.slice_sample(start_point, logprob, compwise=False)
     except Exception as e:
-        handle_slice_sampler_exception(e, start_point, logprob, False)
+        return handle_slice_sampler_exception(e, start_point, logprob, False)
 
 def _sample_ls(comp, vals, cov_func, start_point, mean, amp2, noise):
     def logprob(ls):
@@ -104,7 +104,7 @@ def _sample_ls(comp, vals, cov_func, start_point, mean, amp2, noise):
     try:
         return util.slice_sample(start_point, logprob, compwise=True)
     except Exception as e:
-        handle_slice_sampler_exception(e, start_point, logprob, True)
+        return handle_slice_sampler_exception(e, start_point, logprob, True)
 
 
 def sample_hyperparameters(mcmc_iters, noiseless, input_points, func_values, cov_func, noise, amp2, ls):

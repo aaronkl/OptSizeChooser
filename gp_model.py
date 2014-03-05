@@ -26,8 +26,8 @@ def fetchKernel(covar_name):
         f = globals()[covar_name]
         df = globals()['grad_' + covar_name]
         return (f, df)
-    
-    
+
+
 def getNumberOfParameters(covarname, input_dimension):
     '''
     Returns the number of parameters the kernel has.
@@ -59,8 +59,8 @@ def getNumberOfParameters(covarname, input_dimension):
             return getNumberOfParameters('Polynomial3', input_dimension)+getNumberOfParameters('Matern52', input_dimension)
         else:
             raise NotImplementedError('The given covariance function (' + covarname + ') was not found.')
-        
-        
+
+
 def _polynomial3_raw(ls, x1, x2=None, value=True, grad=False):
     factor = 1
     if x2 is None:
