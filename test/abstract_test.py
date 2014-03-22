@@ -63,13 +63,13 @@ def cov(gp, x1, x2=None):
 class AbstractTest(unittest.TestCase):
     def setUp(self):
         seed = npr.randint(65000)
-        #seed = 55630
+        #seed = 35133
         print("using seed: " + str(seed))
         np.random.seed(seed)
         (X, y) = makeObservations(d, scale)
         self.X = X
         self.y = y
-        covarname = "Polynomial3"
+        covarname = "ARDSE"
         cov_func, _ = fetchKernel(covarname)
         noise = 1e-6
         amp2 = np.std(y)+1e-4

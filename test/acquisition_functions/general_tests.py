@@ -33,6 +33,11 @@ class Test(unittest.TestCase):
         '''
         #TODO: implement
 
+    def test_does_not_touch_gp(self):
+        '''
+        Asserts that acquisition functions don't change the given Gaussian process. Necessary since they share it.
+        '''
+
 
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']

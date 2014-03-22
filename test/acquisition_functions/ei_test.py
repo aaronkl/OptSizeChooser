@@ -3,13 +3,13 @@ Created on Oct 29, 2013
 
 @author: Simon Bartels
 '''
-from test.abstract_test import AbstractTest, d, scale, cov
+from ..abstract_test import AbstractTest, d, scale, cov
 import unittest
 import numpy as np
 import scipy.linalg as spla
 import numpy.random as npr
 import scipy.stats as sps
-from acquisition_functions.expected_improvement import ExpectedImprovement
+from ...acquisition_functions.expected_improvement import ExpectedImprovement
 
 class Test(AbstractTest):
 

@@ -516,24 +516,33 @@ class GPModel(object):
         self._y = np.append(self._y, np.array([y]), axis=0)
         #TODO: Use factor update
         self._compute_cholesky()
-        
-    def drawJointSample(self, Xstar, omega):
+
+    def getCholeskyForJointSample(self, Xstar):
         '''
-            Draws a joint sample at the given points.
-            Args:
-                X: a numpy array of points, i.e. a matrix
-                omega: a vector of samples from the standard normal distribution, one for each point
-            Returns:
-                a numpy array (vector)
+        Computes the cholesky decomposition of the covariance matrix and the mean prediction at Xstar.
+        Returns:
+            (mean, cholesky)
         '''
-        #the computation follows "Entropy Search for Information-Ecient Global Optimization"
-        # by Hennig and Schuler
         kXstar = self._compute_covariance(self._X, Xstar)
         cholsolve = spla.cho_solve((self._L, True), kXstar)
         Sigma = (self._compute_covariance(Xstar, Xstar) -
                   np.dot(kXstar.T, cholsolve))
         cholesky = spla.cholesky(Sigma + self._noise*np.eye(Sigma.shape[0]),lower=True)
-        y = self.predict(Xstar,False) + np.dot(cholesky, omega)
+        return (self.predict(Xstar,False), cholesky)
+        
+    def drawJointSample(self, mean, L, omega):
+        '''
+            Draws a joint sample for mean and cholesky decomposition as computed with #getCholeskyForJointSample
+            Args:
+                mean: the first return value of #getCholeskyForJointSample
+                L: the second return value of #getCholeskyForJointSample
+                omega: a vector of samples from the standard normal distribution, one for each point
+            Returns:
+                a numpy array (vector)
+        '''
+        #the computation follows "Entropy Search for Information-Efficient Global Optimization"
+        # by Hennig and Schuler
+        y = mean + np.dot(L, omega)
         return y
     
     def copy(self):
