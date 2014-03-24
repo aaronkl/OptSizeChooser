@@ -120,8 +120,8 @@ class Test(AbstractTest):
         print t2
         assert(t2 < t1)
 
-    def xtest_difference_in_pmin_computation(self):
-        N = 300
+    def test_difference_in_pmin_computation(self):
+        N = 500
         candidate = np.random.uniform(0,1,self.X.shape[1])
         entropy_search.NUMBER_OF_CANDIDATE_SAMPLES = 150
         entropy_search.NUMBER_OF_PMIN_SAMPLES = 500
@@ -154,26 +154,28 @@ class Test(AbstractTest):
 
         t1 = time.time()
         for i in range(0, N):
-            es._compute_pmin_bins_fast(mean+l*es._omega_cands[0], L)
-        t1 = time.time() - t1
-        print t1
-
-
-        t2 = time.time()
-        for i in range(0, N):
             y = es._gp.sample(candidate, es._omega_cands[0])
             gp2 = es._gp.copy()
             gp2.update(candidate, y)
             es._compute_pmin_bins(gp2)
-        t2 = time.time() - t2
-        print t2
-
-        t1 = time.time()
-        for i in range(0, N):
-            m = np.copy(mean+l*es._omega_cands[0])
-            es._compute_pmin_bins_fast(m, L)
         t1 = time.time() - t1
-        print t1
+        print "naive computation of Pmin: " + str(t1)
+
+
+        t2 = time.time()
+        for i in range(0, N):
+            es._compute_pmin_bins_fast(mean+l*es._omega_cands[0], L)
+        t2 = time.time() - t2
+        print "faster computation of Pmin: " + str(t2)
+
+        t3 = time.time()
+        for i in range(0, N):
+            es._compute_pmin_bins_faster(mean+l*es._omega_cands[0], L)
+        t3 = time.time() - t3
+        print "fastest computation of PMin: " + str(t3)
+
+        assert(t3 < t2)
+        assert(t2 < t1)
 
     def test_pmin_computation(self):
         '''

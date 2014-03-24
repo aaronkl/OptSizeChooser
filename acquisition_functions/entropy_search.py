@@ -10,10 +10,9 @@ Instead of using Expectation Propagation we do Monte Carlo integration.
 import numpy as np
 from util import slice_sample
 from ..acquisition_functions.expected_improvement import ExpectedImprovement
-from ..support.hyper_parameter_sampling import handle_slice_sampler_exception
+from ..support.hyper_parameter_sampling import handle_slice_sampler_exception, sample_from_proposal_measure
 from scipy.stats import norm
 from sobol_lib import i4_sobol_generate
-import time
 
 '''
 The number of points used to represent/discretize Pmin (without the candidate).
@@ -30,37 +29,28 @@ The number of samples per candidate.
 '''
 NUMBER_OF_CANDIDATE_SAMPLES = 150
 
-def sample_representer_points(starting_point, log_proposal_measure, number_of_points):
-    '''
-    Samples representer points for discretization of Pmin.
-    Args:
-        starting_point: The point where to start the sampling.
-        log_proposal_measure: A function that measures in log-scale how suitable a point is to represent Pmin.
-        number_of_points: The number of samples to draw.
-    Returns:
-        a numpy array containing the desired number of samples
-    '''
-    representer_points = np.zeros([number_of_points,starting_point.shape[0]])
-    chain_length = 20 * starting_point.shape[0]
-    #TODO: burnin?
-    for i in range(0,number_of_points):
-        #this for loop ensures better mixing
-        for c in range(0, chain_length):
-            try:
-                starting_point = slice_sample(starting_point, log_proposal_measure)
-            except Exception as e:
-                starting_point = handle_slice_sampler_exception(e, starting_point, log_proposal_measure)
-        representer_points[i] = starting_point
-    return representer_points
-
 class EntropySearch(object):
     def __init__(self, comp, vals, gp, cost_gp=None):
         '''
         Default constructor.
         '''
+        self._general_initialization(comp, vals, gp)
+
+        starting_point = comp[np.argmin(vals)]
+        self._func_sample_locations = sample_from_proposal_measure(starting_point,self._log_proposal_measure,
+                                        NUMBER_OF_REPRESENTER_POINTS)
+        self._set_proposal_values_of_representers()
+
+    def _general_initialization(self, comp, vals, gp, cost_gp=None):
+        '''
+        Is called in __init__ and performs initialization that should also apply to children of this class.
+        '''
         self._gp = gp
         self._cost_gp = cost_gp
         self._ei = ExpectedImprovement(comp, vals, gp, cost_gp)
+
+        #we need this as an iterator for the computation of Pmin
+        self._idx = np.arange(0, NUMBER_OF_PMIN_SAMPLES)
 
         #samples for the reprensenter points to compute Pmin
         #self._Omega = np.random.normal(0, 1, (NUMBER_OF_PMIN_SAMPLES,
@@ -75,9 +65,7 @@ class EntropySearch(object):
                                            1-1./(NUMBER_OF_CANDIDATE_SAMPLES+1),
                                            NUMBER_OF_CANDIDATE_SAMPLES))
 
-        starting_point = comp[np.argmin(vals)]
-        self._func_sample_locations = sample_representer_points(starting_point,self._log_proposal_measure,
-                                        NUMBER_OF_REPRESENTER_POINTS)
+    def _set_proposal_values_of_representers(self):
         self._log_proposal_vals = np.zeros(NUMBER_OF_REPRESENTER_POINTS)
         #u(x) is fixed - therefore we can compute it here
         for i in range(0, NUMBER_OF_REPRESENTER_POINTS):
@@ -101,7 +89,7 @@ class EntropySearch(object):
         mean = np.copy(mean[1:])
         L = np.copy(L[1:,1:]) #appearantly it's faster to copy
         for i in range(0, NUMBER_OF_CANDIDATE_SAMPLES):
-            pmin = self._compute_pmin_bins_fast(mean+l*self._omega_cands[i], L)
+            pmin = self._compute_pmin_bins_faster(mean+l*self._omega_cands[i], L)
             entropy_pmin = -np.dot(pmin, np.log(pmin+1e-50))
             log_proposal = np.dot(self._log_proposal_vals, pmin)
             #division by NUMBER_OF_CANDIDATE_SAMPLES to keep things numerically stable
@@ -113,11 +101,21 @@ class EntropySearch(object):
         pmin = np.zeros(NUMBER_OF_REPRESENTER_POINTS)
         for omega in self._Omega:
             vals = mean + np.dot(L, omega)
+            #pmin[np.argmin(vals)]+=1
             mins = np.where(vals == vals.min())[0] #the return value is a tuple
             number_of_mins = len(mins)
             for m in mins:
-                pmin[m] += 1./(number_of_mins)
+               pmin[m] += 1./(number_of_mins)
         pmin = pmin / NUMBER_OF_PMIN_SAMPLES
+        return pmin
+
+    def _compute_pmin_bins_faster(self, mean , L):
+        Y = mean[:,np.newaxis] + np.dot(L, self._Omega.T)
+        min_idx = np.argmin(Y, axis = 0)
+        mins = np.zeros([NUMBER_OF_REPRESENTER_POINTS, NUMBER_OF_PMIN_SAMPLES])
+        mins[min_idx, self._idx] = 1
+        pmin = np.sum(mins, axis = 1)
+        pmin = 1./ NUMBER_OF_PMIN_SAMPLES * pmin
         return pmin
 
     def compute(self, candidate, compute_gradient = False):
