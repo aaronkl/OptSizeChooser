@@ -26,8 +26,8 @@ def fetchKernel(covar_name):
         f = globals()[covar_name]
         df = globals()['grad_' + covar_name]
         return (f, df)
-
-
+    
+    
 def getNumberOfParameters(covarname, input_dimension):
     '''
     Returns the number of parameters the kernel has.
@@ -59,8 +59,8 @@ def getNumberOfParameters(covarname, input_dimension):
             return getNumberOfParameters('Polynomial3', input_dimension)+getNumberOfParameters('Matern52', input_dimension)
         else:
             raise NotImplementedError('The given covariance function (' + covarname + ') was not found.')
-
-
+        
+        
 def _polynomial3_raw(ls, x1, x2=None, value=True, grad=False):
     factor = 1
     if x2 is None:
@@ -438,8 +438,7 @@ class GPModel(object):
         
         beta = spla.solve_triangular(self._L, kXstar, lower=True)
 
-
-        #old spearmint line - their kernels have k(X,X)=1
+        #old spearmint line - their kernels have k(x,x)=1
         #func_v = self._amp2 * (1 + 1e-6) - np.sum(beta ** 2, axis=0)
 
         #prior variance is basically diag(k(X,X))
@@ -447,7 +446,6 @@ class GPModel(object):
         for i in range(0, Xstar.shape[0]):
             prior_variance[i] = self._compute_covariance(np.array([Xstar[i]]))[0]
         func_v = prior_variance - np.sum(beta ** 2, axis=0) #np.dot(beta.T, beta)
-
         return (func_m, func_v)
 
     def predict_vector(self, input_point):
@@ -502,7 +500,7 @@ class GPModel(object):
         x = np.array([x])
         cholsolve = spla.cho_solve((self._L, True), self._compute_covariance(self._X, x))
         cholesky = np.sqrt(self._compute_covariance(x, x) - 
-                           np.dot(self._compute_covariance(x, self._X), cholsolve))
+                           np.dot(self._compute_covariance(self._X, x).T, cholsolve)+self._noise)
         y = self.predict(x,False) + cholesky * omega
         #y is in the form [[value]] (1x1 matrix)
         return y[0][0]
@@ -518,22 +516,33 @@ class GPModel(object):
         self._y = np.append(self._y, np.array([y]), axis=0)
         #TODO: Use factor update
         self._compute_cholesky()
-        
-    def drawJointSample(self, Xstar, omega):
+
+    def getCholeskyForJointSample(self, Xstar):
         '''
-            Draws a joint sample at the given points.
-            Args:
-                X: a numpy array of points, i.e. a matrix
-                omega: a vector of samples from the standard normal distribution, one for each point
-            Returns:
-                a numpy array (vector)
+        Computes the cholesky decomposition of the covariance matrix and the mean prediction at Xstar.
+        Returns:
+            (mean, cholesky)
         '''
         kXstar = self._compute_covariance(self._X, Xstar)
         cholsolve = spla.cho_solve((self._L, True), kXstar)
         Sigma = (self._compute_covariance(Xstar, Xstar) -
                   np.dot(kXstar.T, cholsolve))
-        cholesky = spla.cholesky(Sigma + 1e-6*np.eye(Sigma.shape[0]))
-        y = self.predict(Xstar,False) + np.dot(cholesky, omega)
+        cholesky = spla.cholesky(Sigma + self._noise*np.eye(Sigma.shape[0]),lower=True)
+        return (self.predict(Xstar,False), cholesky)
+        
+    def drawJointSample(self, mean, L, omega):
+        '''
+            Draws a joint sample for mean and cholesky decomposition as computed with #getCholeskyForJointSample
+            Args:
+                mean: the first return value of #getCholeskyForJointSample
+                L: the second return value of #getCholeskyForJointSample
+                omega: a vector of samples from the standard normal distribution, one for each point
+            Returns:
+                a numpy array (vector)
+        '''
+        #the computation follows "Entropy Search for Information-Efficient Global Optimization"
+        # by Hennig and Schuler
+        y = mean + np.dot(L, omega)
         return y
     
     def copy(self):
