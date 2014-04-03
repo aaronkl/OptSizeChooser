@@ -26,8 +26,8 @@ class Entropy(object):
         self._idx = np.arange(0, self._num_of_samples)
 
         #TODO: random sampling
-        self._Omega = norm.ppf(i4_sobol_generate(self._num_of_representer_points,
-                                    self._num_of_samples + 1, 1)[:, 1:]).T
+        self._Omega = np.random.normal(0, 1, (self._num_of_samples,
+                                             self._num_of_representer_points))
 
         self._hallucinated_vals = norm.ppf(np.linspace(1. / (self._num_of_hallucinated_vals + 1),
                                     1 - 1. / (self._num_of_hallucinated_vals + 1),

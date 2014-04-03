@@ -21,6 +21,10 @@ from entropy_with_costs import EntropyWithCosts
 from hyper_parameter_sampling import sample_hyperparameters
 from support import compute_pmin_bins, sample_from_proposal_measure
 
+import tempfile
+import cPickle
+import os
+
 
 def init(expt_dir, arg_string):
     args = unpack_args(arg_string)
@@ -28,7 +32,7 @@ def init(expt_dir, arg_string):
 
 
 class EntropySearchChooser(object):
-
+#TODO: Adjust the parameters and remove unused parameters
     def __init__(self, expt_dir, covar='Matern52', cost_covar='Polynomial3',
                  mcmc_iters=10,
                  pending_samples=100, noiseless=False, burnin=100,
@@ -92,7 +96,7 @@ class EntropySearchChooser(object):
                                                      noise, amp2, ls)
 
         #Flags
-        self._withCosts = False
+        self._withCosts = True
         self._withPlotting = False
         self._withPlotting3D = False
 
@@ -123,11 +127,11 @@ class EntropySearchChooser(object):
         mins = self._find_local_minima(self._comp, self._vals, self._models, cand)
         incumbent = self.getIncumbent(self._comp, self._vals, self._models, mins)
 
-        log("Current best: " + str(incumbent))
-
+        log("Incumbent: " + str(incumbent))
+        self._save_incumbent(incumbent)
         #Take candidate that will be optimized
         #selected_candidates = cand[:self._num_of_candidates]
-        log("Number of candidate: " + str(cand.shape[0]))
+        log("Number of candidates: " + str(cand.shape[0]))
         selected_candidates = cand
         selected_candidates = np.vstack((selected_candidates, mins))
 
