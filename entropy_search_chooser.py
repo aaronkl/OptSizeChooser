@@ -119,7 +119,6 @@ class EntropySearchChooser(object):
         self._initialize_models(durs)
 
         cand = grid[candidates, :]
-        cand = cand[:100]
 
         mins = self._find_local_minima(self._comp, self._vals, self._models, cand)
         incumbent = self.getIncumbent(self._comp, self._vals, self._models, mins)
@@ -127,7 +126,9 @@ class EntropySearchChooser(object):
         log("Current best: " + str(incumbent))
 
         #Take candidate that will be optimized
-        selected_candidates = cand[:self._num_of_candidates]
+        #selected_candidates = cand[:self._num_of_candidates]
+        log("Number of candidate: " + str(cand.shape[0]))
+        selected_candidates = cand
         selected_candidates = np.vstack((selected_candidates, mins))
 
         #Compute entropy of the selected candidates
@@ -227,7 +228,7 @@ class EntropySearchChooser(object):
             a numpy vector that is the point with the highest probability to be the minimum
         '''
         local_minima = self._find_local_minima(evaluated, values, model_list, candidates)
-        pmin = self._compute_pmin_probabilities(model_list, candidates)
+        pmin = self._compute_pmin_probabilities(model_list, local_minima)
         return local_minima[np.argmin(pmin)]
 
     def _compute_pmin_probabilities(self, model_list, candidates):

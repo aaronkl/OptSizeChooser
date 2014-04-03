@@ -14,14 +14,14 @@ from spearmint.sobol_lib import i4_sobol_generate
 
 class Entropy(object):
 
-    def __init__(self, gp):
+    def __init__(self, gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=10):
 
         #Number of samples for the current candidate
-        self._num_of_hallucinated_vals = 300
+        self._num_of_hallucinated_vals = num_of_hal_vals
         #Number of function drawn from the gp
-        self._num_of_samples = 300
+        self._num_of_samples = num_of_samples
         #Number of point where pmin is evaluated
-        self._num_of_representer_points = 10
+        self._num_of_representer_points = num_of_rep_points
         self._gp = gp
         self._idx = np.arange(0, self._num_of_samples)
 
@@ -72,36 +72,29 @@ class Entropy(object):
     def compute(self, candidate):
 
         kl_divergence = 0
+        mean, L = self._gp.getCholeskyForJointSample(np.append(np.array([candidate]),
+                                                               self._representer_points,
+                                                               axis=0))
+
+        l = np.copy(L[1:, 0])
+        mean = np.copy(mean[1:])
+        L = np.copy(L[1:, 1:])
 
         for i in range(0, self._num_of_hallucinated_vals):
-
-            y = self._gp.sample(candidate, self._hallucinated_vals[i])
-            gp_copy = self._gp.copy()
-            gp_copy.update(candidate, y)
-
-            pmin = self._compute_pmin(gp_copy)
-
+            pmin = self._compute_pmin(mean + l * self._hallucinated_vals[i], L)
             entropy_pmin = -np.dot(pmin, np.log(pmin + 1e-50))
             log_proposal = np.dot(self._log_proposal_vals, pmin)
-
             kl_divergence += (entropy_pmin - log_proposal) / self._num_of_hallucinated_vals
 
         return -kl_divergence
 
-    def _compute_pmin(self, gp):
+    def _compute_pmin(self, mean, L):
 
-        pmin = np.zeros(self._num_of_representer_points)
-        mean, L = gp.getCholeskyForJointSample(self._representer_points)
-
-        for omega in self._Omega:
-
-            vals = gp.drawJointSample(mean, L, omega)
-            mins = np.where(vals == vals.min())[0]
-            number_of_mins = len(mins)
-
-            for m in mins:
-                pmin[m] += 1. / (number_of_mins)
-
-        pmin = pmin / self._num_of_hallucinated_vals
+        vals = mean[:, np.newaxis] + np.dot(L, self._Omega.T)
+        mins_idx = np.argmin(vals, axis=0)
+        mins = np.zeros(vals.shape)
+        mins[mins_idx, self._idx] = 1
+        pmin = np.sum(mins, axis=1)
+        pmin = pmin / self._num_of_samples
 
         return pmin
