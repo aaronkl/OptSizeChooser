@@ -128,7 +128,6 @@ class EntropySearchChooser(object):
         incumbent = self.getIncumbent(self._comp, self._vals, self._models, mins)
 
         log("Incumbent: " + str(incumbent))
-        self._save_incumbent(incumbent)
         #Take candidate that will be optimized
         #selected_candidates = cand[:self._num_of_candidates]
         log("Number of candidates: " + str(cand.shape[0]))
