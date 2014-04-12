@@ -13,13 +13,12 @@ from checkbox.properties import Time
 from multiprocessing import Pool
 from spearmint.helpers import log
 
-from gp_model import GPModel
-from gp_model import fetchKernel
-from gp_model import getNumberOfParameters
-from entropy import Entropy
-from entropy_with_costs import EntropyWithCosts
-from hyper_parameter_sampling import sample_hyperparameters
-from support import compute_pmin_bins, sample_from_proposal_measure
+from .gp_model import GPModel, fetchKernel, getNumberOfParameters
+from .entropy import Entropy
+from .entropy_with_costs import EntropyWithCosts
+from .hyper_parameter_sampling import sample_hyperparameters
+from .support import compute_pmin_bins, sample_from_proposal_measure
+import traceback
 
 import tempfile
 import cPickle
@@ -38,10 +37,10 @@ class EntropySearchChooser(object):
                  pending_samples=100, noiseless=False, burnin=100,
                  grid_subset=20,
                  num_of_cands=100,
-                 pool_size=16,
                  incumbent_inter_sample_distance=20,
                  incumbent_number_of_minima=10,
-                 number_of_pmin_samples=1000):
+                 number_of_pmin_samples=1000,
+                 with_plotting=True, with_costs=True):
 
         seed = np.random.randint(65000)
         log("using seed: " + str(seed))
@@ -53,7 +52,6 @@ class EntropySearchChooser(object):
         self._hyper_samples = []
         self._cost_func_hyper_param = []
         self._is_initialized = False
-        self._pool_size = int(pool_size)
         self._mcmc_iters = int(mcmc_iters)
         self._noiseless = noiseless
         self._burnin = burnin
@@ -67,6 +65,10 @@ class EntropySearchChooser(object):
         self._incumbent_inter_sample_distance = int(incumbent_inter_sample_distance)
         self._incumbent_number_of_minima = int(incumbent_number_of_minima)
         self._number_of_pmin_samples = number_of_pmin_samples
+
+        #Flags
+        self._withCosts = bool(with_costs)
+        self._with_plotting = bool(with_plotting)
 
     def _real_init(self, dims, comp, values, durations):
 
@@ -95,14 +97,9 @@ class EntropySearchChooser(object):
                                                      self._comp, durations, self._cost_cov_func,
                                                      noise, amp2, ls)
 
-        #Flags
-        self._withCosts = True
-        self._withPlotting = False
-        self._withPlotting3D = False
-
-        if(self._withPlotting or self._withPlotting3D):
+        if(self._with_plotting):
             import Visualizer as vis
-            self._visualizer = vis.Visualizer(comp.shape[0] - 2)
+            self._visualizer = vis.Visualizer(comp.shape[0] - 2, self.expt_dir)
 
     def next(self, grid, values, durations, candidates, pending, complete):
 
@@ -125,14 +122,14 @@ class EntropySearchChooser(object):
         cand = grid[candidates, :]
 
         mins = self._find_local_minima(self._comp, self._vals, self._models, cand)
-        incumbent = self.getIncumbent(self._comp, self._vals, self._models, mins)
-
+        pmin = self._compute_pmin_probabilities(self._models, mins)
+        incumbent = mins[np.argmax(pmin)]
         log("Incumbent: " + str(incumbent))
         #Take candidate that will be optimized
         #selected_candidates = cand[:self._num_of_candidates]
-        log("Number of candidates: " + str(cand.shape[0]))
         selected_candidates = cand
         selected_candidates = np.vstack((selected_candidates, mins))
+        log("Number of candidates: " + str(cand.shape[0]))
 
         #Compute entropy of the selected candidates
         overall_entropy = np.zeros(selected_candidates.shape[0])
@@ -145,18 +142,30 @@ class EntropySearchChooser(object):
 
         best_cand = np.argmax(overall_entropy)
 
-        if(self._withPlotting):
-            self._visualizer.plot_projected_gp(self._comp, self._vals, self._cost_models[0], True)
+        if(self._with_plotting):
+            #we don't want problems in the visualizer disturb the experiments
+            try:
+                log("Visualizing ...")
+                if cand.shape[1] == 1:
+                    #one dimensional problem
+                    self._visualizer.plot_projected_gp(self._comp, self._vals, self._cost_models[0], True)
 
-            self._visualizer.plot(self._comp, self._vals, self._models[0],
-                                                        self._cost_models[0],
-                                                        selected_candidates)
+                    self._visualizer.plot(self._comp, self._vals, self._models[0],
+                                                                self._cost_models[0],
+                                                                selected_candidates)
 
-        if(self._withPlotting3D):
-            self._visualizer.plot3D(self._comp, self._vals, self._models[0],
-                                                        self._cost_models[0],
-                                                        selected_candidates[best_cand],
-                                                        selected_candidates)
+                elif cand.shape[1] == 2:
+                    #two dimensional problem
+                    self._visualizer.plot3D(self._comp, self._vals, self._models[0],
+                                                                self._cost_models[0],
+                                                                selected_candidates[best_cand],
+                                                                selected_candidates,
+                                                                entropy_values=overall_entropy,
+                                                                incumbent=incumbent)
+                else:
+                    log("No Visualizer available for more than 2 dimensional problems.")
+            except Exception, e:
+                log("Visualizer crashed. Exception: " + traceback.format_exc())
 
         log("Evaluating: " + str(selected_candidates[best_cand]))
 
@@ -219,21 +228,6 @@ class EntropySearchChooser(object):
 
             self._cost_models.append(cost_gp)
 
-    def getIncumbent(self, evaluated, values, model_list, candidates):
-        '''
-        Returns the current best guess where the minimum of the objective function could be.
-        Args:
-            evaluated: numpy matrix containing the points that have been evaluated so far
-            values: the corresponding values that have been observed
-            model_list: a list of Gaussian processes
-            candidates: a numpy matrix of candidates
-        Returns:
-            a numpy vector that is the point with the highest probability to be the minimum
-        '''
-        local_minima = self._find_local_minima(evaluated, values, model_list, candidates)
-        pmin = self._compute_pmin_probabilities(model_list, local_minima)
-        return local_minima[np.argmin(pmin)]
-
     def _compute_pmin_probabilities(self, model_list, candidates):
         '''
         Computes the probability for each candidate to be the minimum. Ideally candidates was computed with
@@ -282,8 +276,15 @@ class EntropySearchChooser(object):
         for i in range(0, sampled_points.shape[0]):
             optimized = spo.fmin_l_bfgs_b(self._objective_function, sampled_points[i].flatten(), args=(model_list, True),
                                           bounds=opt_bounds, disp=0)
-            #we care only for the point, not for the value or debug messages
-            optimized = optimized[0]
+            #consistency check
+            value = optimized[1]
+            if value > objective_function(sampled_points[i]):
+                #happens sometimes, something with the Hessian not being positive definite
+                log('WARNING: Result of optimizer worse than initial guess! Ignoring result.')
+                optimized = sampled_points[i]
+            else:
+                #we care only for the point, not for the value or debug messages
+                optimized = optimized[0]
 
             #remove duplicates
             append = True
