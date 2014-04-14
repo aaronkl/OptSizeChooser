@@ -14,7 +14,7 @@ from spearmint.sobol_lib import i4_sobol_generate
 
 class Entropy(object):
 
-    def __init__(self, gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=10):
+    def __init__(self, gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20):
 
         #Number of samples for the current candidate
         self._num_of_hallucinated_vals = num_of_hal_vals

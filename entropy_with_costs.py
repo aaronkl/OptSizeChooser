@@ -16,7 +16,7 @@ from hyper_parameter_sampling import handle_slice_sampler_exception
 
 class EntropyWithCosts():
 
-    def __init__(self, gp, cost_gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=10):
+    def __init__(self, gp, cost_gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20):
 
         self._gp = gp
         self._cost_gp = cost_gp

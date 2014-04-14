@@ -126,14 +126,12 @@ class EntropySearchChooser(object):
 
         mins = self._find_local_minima(self._comp, self._vals, self._models, cand)
         incumbent = self.getIncumbent(self._comp, self._vals, self._models, mins)
-
         log("Incumbent: " + str(incumbent))
-        #Take candidate that will be optimized
-        #selected_candidates = cand[:self._num_of_candidates]
-        log("Number of candidates: " + str(cand.shape[0]))
+
+
         selected_candidates = cand
         selected_candidates = np.vstack((selected_candidates, mins))
-
+        log("Number of candidates: " + str(selected_candidates.shape[0]))
         #Compute entropy of the selected candidates
         overall_entropy = np.zeros(selected_candidates.shape[0])
 
