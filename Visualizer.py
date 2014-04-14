@@ -3,24 +3,30 @@ Created on 10.11.2013
 
 @author: Aaron Klein
 '''
-
 import matplotlib.pyplot as plt
+import matplotlib.mlab as mlab
 import math
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
-from acquisition_functions.entropy_search import EntropySearch, NUMBER_OF_PMIN_SAMPLES, NUMBER_OF_CANDIDATE_SAMPLES, NUMBER_OF_REPRESENTER_POINTS
-from acquisition_functions.expected_improvement import ExpectedImprovement
-from acquisition_functions.entropy_search_big_data import EntropySearchBigData
+from .entropy import Entropy
+from .entropy_with_costs import EntropyWithCosts
+from .support import compute_expected_improvement, compute_pmin_bins
 
 
 class Visualizer():
 
-    def __init__(self, index):
-
+    def __init__(self, index, path='.'):
+        '''
+        Default constructor.
+        Args:
+            index: number of the image file
+            path: where to store the images
+        '''
         self._index = index
         self._costs = index
+        self._path = path
 
     def plot(self, X, y, model, cost_model, cands):
 
@@ -30,7 +36,7 @@ class Visualizer():
 
         self.plot_gp(X, y, model)
         num_of_cands = 101
-        entropy_estimator = EntropySearch(X, y, model, cost_model)
+        entropy_estimator = Entropy(model, cost_model)
         entropy_plot = np.zeros([num_of_cands])
         points_plot = np.linspace(0, 1, num_of_cands)
 
@@ -40,12 +46,11 @@ class Visualizer():
 
         self.plot_entropy_one_dim(points_plot, entropy_plot)
 
-        ei = ExpectedImprovement(X, y, model)
         ei_values = np.zeros([num_of_cands])
         ei_points = np.linspace(0, 1, num_of_cands)
 
         for i in xrange(0, num_of_cands):
-            ei_values[i] = ei.compute(np.array([ei_points[i]]))
+            ei_values[i] = compute_expected_improvement(np.array([ei_points[i]]), model)
 
         self.plot_expected_improvement(ei_points, ei_values)
 
@@ -64,7 +69,7 @@ class Visualizer():
         #           ('Expected Improvement', 'Entropy', 'Performance',
         #               'Pmin', 'Selected Candidates', 'Comp'), loc=0)
 
-        filename = "/home/kleinaa/plots/plot_" + str(self._index) + ".png"
+        filename = self._path + "/plot_" + str(self._index) + ".png"
         self._index += 1
 
         box = ax.get_position()
@@ -120,22 +125,53 @@ class Visualizer():
         plt.fill_between(test_inputs[:, 0], upper_bound[:, 0],
                          lower_bound[:, 0], facecolor='red', alpha=0.6)
 
-    def plot3D(self, X, y, model, cost_model, incumbent, cand):
+    def plot3D(self, X, y, model, cost_model, next_cand, cand, points_per_axis=100,
+               entropy_values=None, incumbent=None):
+        #compute pmin
+        representers = np.ones([points_per_axis, 2])
+        representers[:, 1] = np.linspace(0, 1, points_per_axis)[:]
+        Omega = np.asfortranarray(np.random.normal(0, 1, (100,
+                                         points_per_axis)))
+        mean, L = model.getCholeskyForJointSample(representers)
+        pmin = compute_pmin_bins(Omega, mean, L)
 
+        self._points_per_axis = points_per_axis
         self._fig = plt.figure()
         fig = plt.figure(figsize=plt.figaspect(0.5))
 
-        self._ax = fig.add_subplot(2, 2, 1, projection='3d')
+        #the number of plots in x and y direction
+        num_plots_x = 2
+        num_plots_y = 4
+        axis_index = 1
+
+        self._ax = fig.add_subplot(num_plots_x, num_plots_y, axis_index, projection='3d')
         self._ax.text2D(0.0, 0.1, "Model")
+        axis_index+=1
 
-        self._ax_2 = fig.add_subplot(2, 2, 2, projection='3d')
+        self._ax_2 = fig.add_subplot(num_plots_x, num_plots_y, axis_index, projection='3d')
         self._ax_2.text2D(0.0, 0.1, "Entropy")
+        axis_index+=1
 
-        self._ax_3 = fig.add_subplot(2, 2, 3)
+        #heat map for the model
+        self._ax_5 = fig.add_subplot(num_plots_x, num_plots_y, axis_index)
+        self._ax_5.axis([0, points_per_axis, 0, points_per_axis])
+        axis_index+=1
+
+        #heat map for the acquisition function
+        self._ax_6 = fig.add_subplot(num_plots_x, num_plots_y, axis_index)
+        axis_index+=1
+
+        self._ax_3 = fig.add_subplot(num_plots_x, num_plots_y, axis_index)
 #         self._ax_3.text2D(0.05, 1.95, "Candidates")
+        axis_index+=1
 
-        self._ax_4 = fig.add_subplot(2, 2, 4)
+        self._ax_4 = fig.add_subplot(num_plots_x, num_plots_y, axis_index)
 #         self._ax_4.text2D(0.15, 1.95, "Pmin")
+        axis_index+=1
+
+        #heat map for the cost gp
+        self._ax_7 = fig.add_subplot(num_plots_x, num_plots_y, axis_index)
+        axis_index+=1
 
         self._ax_3.axis([0, 1, 0, 1])
         self._ax_4.axis([0, 1, 0, 1])
@@ -145,42 +181,33 @@ class Visualizer():
         self._ax_3.set_ylabel('X')
 
         self.plot3D_gp(model)
+        #add incumbent to plot (needs to be transposed)
+        self._ax_5.plot(incumbent[1] * points_per_axis, incumbent[0] * points_per_axis, 'mx')
 
-        entropy_estimator = EntropySearchBigData(X, y, model, cost_model)
-        x = np.linspace(0, 1, 100)[:, np.newaxis]
-        y = np.linspace(0, 1, 100)[:, np.newaxis]
+        x = np.linspace(0, 1, points_per_axis)[:, np.newaxis]
+        y = np.linspace(0, 1, points_per_axis)[:, np.newaxis]
 
         x, y = np.meshgrid(x, y)
 
-        test_inputs = np.zeros((100 * 100, 2))
-        for i in xrange(0, 100):
-            for j in xrange(0, 100):
-                test_inputs[i * 100 + j, 0] = x[j][i]
-                test_inputs[i * 100 + j, 1] = y[j][i]
+        test_inputs = np.zeros((points_per_axis * points_per_axis, 2))
+
+        ei_values = np.zeros([points_per_axis, points_per_axis])
+
+        for i in xrange(0, points_per_axis):
+            for j in xrange(0, points_per_axis):
+                test_inputs[i * points_per_axis + j, 0] = x[j][i]
+                test_inputs[i * points_per_axis + j, 1] = y[j][i]
+                ei_values[j][i] = compute_expected_improvement(np.array([x[i][j], y[i][j]]), model)
 
         cost = cost_model.predict(test_inputs, False)
+        cost = cost.reshape([points_per_axis, points_per_axis])
+        self._ax_7.imshow(cost, cmap='hot', origin='lower')
+        self._ax_7.text(0, 105, "Costs")
+        self._ax_7.set_xlabel('X')
+        self._ax_7.set_ylabel('S')
 
-        entropy = np.zeros([100, 100])
-
-        for i in xrange(0, 100):
-            for j in xrange(0, 100):
-                entropy[j][i] = entropy_estimator.compute(np.array([x[i][j],
-                                                                    y[i][j]]))
-
-                entropy[j][i] /= cost[i * 100 + j]
-
-        self.plot3D_entropy(x, y, entropy)
-
-        ei = ExpectedImprovement(X, y, model)
-        x = np.linspace(0, 1, 100)[:, np.newaxis]
-        y = np.linspace(0, 1, 100)[:, np.newaxis]
-
-        x, y = np.meshgrid(x, y)
-
-        ei_values = np.zeros([100, 100])
-        for i in xrange(0, 100):
-            for j in xrange(0, 100):
-                ei_values[j][i] = ei.compute(np.array([x[i][j], y[i][j]]))
+        self.plot3D_entropy(cand[:, 0], cand[:, 1], entropy_values)
+        self._ax_6.plot(next_cand[1] * points_per_axis, next_cand[0] * points_per_axis, 'bx')
 
         self._ax_3.hold(True)
         self._ax_3.plot(X[:, 0], X[:, 1], 'ro', label="Points")
@@ -191,22 +218,14 @@ class Visualizer():
 
         self._ax_3.legend()
 
-        mu = model.predict(np.array([incumbent]))
-        y = np.random.normal(loc=mu, scale=1.0)
-        updated_model = model.copy()
-        updated_model.update(incumbent, y)
-
-        pmin_new = entropy_estimator._compute_pmin_bins(updated_model)
         #self.plot3D_expected_improvement(x, y, ei_values)
 
         #self.plot3D_representer_points(entropy_estimator._func_sample_locations)
         self._ax_4.hold(True)
-        self.plot_old_pmin(entropy_estimator._pmin_old)
-
-        self.plot_new_pmin(pmin_new)
+        self.plot_old_pmin(pmin)
 
         self._ax_4.legend()
-        filename = "/home/kleinaa/plots/plot3D_" + str(self._index) + ".png"
+        filename = self._path + "/plot3D_" + str(self._index) + ".png"
         self._index += 1
 
         plt.savefig(filename)
@@ -217,28 +236,44 @@ class Visualizer():
 
     def plot3D_entropy(self, x, y, entropy):
         entropy = (entropy - np.mean(entropy)) / np.sqrt(np.var(entropy))
-        self._ax_2.plot_surface(x, y, entropy, cmap='Blues_r')
+        self._ax_2.axis([0, 1, 0, 1])
+        self._ax_6.axis([0, self._points_per_axis, 0, self._points_per_axis])
+        #self._ax_2.scatter(x, y, entropy, cmap='Blues_r')
+        #self._ax_6.scatter(x, y, c=entropy, cmap='hot')
+        _xi = np.linspace(0, 1, self._points_per_axis)
+        _yi = np.linspace(0, 1, self._points_per_axis)
+        _Z = mlab.griddata(x, y, entropy, _xi, _yi)
+        _X, _Y = np.meshgrid(_xi, _yi)
+        self._ax_2.plot_surface(_X, _Y, _Z.T, cmap='Blues_r')
+        self._ax_6.imshow(_Z.T, cmap='hot', origin='lower')
+        self._ax_6.text(0, self._points_per_axis + 5, "Acquisition Function")
+        self._ax_6.set_xlabel('X')
+        self._ax_6.set_ylabel('S')
 
     def plot3D_gp(self, model):
 
-        x = np.linspace(0, 1, 100)[:, np.newaxis]
-        y = np.linspace(0, 1, 100)[:, np.newaxis]
+        x = np.linspace(0, 1, self._points_per_axis)[:, np.newaxis]
+        y = np.linspace(0, 1, self._points_per_axis)[:, np.newaxis]
 
         x, y = np.meshgrid(x, y)
-        test_inputs = np.zeros((100 * 100, 2))
-        for i in xrange(0, 100):
-            for j in xrange(0, 100):
-                test_inputs[i * 100 + j, 0] = x[j][i]
-                test_inputs[i * 100 + j, 1] = y[j][i]
+        test_inputs = np.zeros((self._points_per_axis * self._points_per_axis, 2))
+        for i in xrange(0, self._points_per_axis):
+            for j in xrange(0, self._points_per_axis):
+                test_inputs[i * self._points_per_axis + j, 0] = x[j][i]
+                test_inputs[i * self._points_per_axis + j, 1] = y[j][i]
 
         mean = model.predict(test_inputs, False)
 
-        z = np.zeros((100, 100))
-        for i in xrange(0, 100):
-            for j in xrange(0, 100):
-                z[j][i] = mean[i * 100 + j]
+        z = np.zeros((self._points_per_axis, self._points_per_axis))
+        for i in xrange(0, self._points_per_axis):
+            for j in xrange(0, self._points_per_axis):
+                z[i][j] = mean[i * self._points_per_axis + j]
 
         self._ax.plot_surface(x, y, z, cmap='Reds_r')
+        self._ax_5.imshow(z, cmap='hot', origin='lower')
+        self._ax_5.text(0, self._points_per_axis + 5, "Model")
+        self._ax_5.set_xlabel('X')
+        self._ax_5.set_ylabel('S')
 
     def plot_new_pmin(self, pmin):
 
@@ -251,3 +286,6 @@ class Visualizer():
         ind = np.linspace(0, 1, pmin.shape[0])
         #self._ax_4.bar(ind, pmin, 0.04, color='r')
         self._ax_4.plot(ind, pmin, color='r', label="Pmin_old")
+
+
+    #def plot_
