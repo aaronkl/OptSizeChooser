@@ -48,6 +48,7 @@ def compute_pmin_bins(Omega, mean, L):
     pmin = 1. / number_of_samples * pmin
     return pmin
 
+
 def compute_kl_divergence(candidate, representer_points, log_proposal_vals, gp, Omega, normal_samples):
     '''
     See "Entropy Search for Information-Efficient Global Optimization" by Hennig and Schuler.

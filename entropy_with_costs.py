@@ -35,7 +35,7 @@ class EntropyWithCosts():
         #the representers miss the first coordinate: we need to add it here.
         for i in range(0, num_of_rep_points):
             self._log_proposal_vals[i] = self._sample_measure(representers[i])
-             #set first value to one
+            #set first value to one
             self._representer_points[i] = np.insert(representers[i], 0, 1)
 
         #as fortran array Omega.T is C-contiguous which speeds up dot product computation
@@ -49,7 +49,6 @@ class EntropyWithCosts():
         #TODO: Change it to vector computation
         self._pmin_old = self._compute_pmin_old(self._gp)
         entropy_pmin_old = -np.dot(self._pmin_old, np.log(self._pmin_old + 1e-50))
-
 
         log_proposal_old = np.dot(self._log_proposal_vals, self._pmin_old)
         self._kl_divergence_old = -(entropy_pmin_old - log_proposal_old)
@@ -91,5 +90,5 @@ class EntropyWithCosts():
             number_of_mins = len(mins)
             for m in mins:
                 pmin[m] += 1. / (number_of_mins)
-        pmin = pmin / self._num_of_samples
+        pmin += pmin / self._num_of_samples
         return pmin

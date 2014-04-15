@@ -13,11 +13,7 @@ from spearmint.sobol_lib import i4_sobol_generate
 
 class Entropy(object):
 
-<<<<<<< HEAD
     def __init__(self, gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20):
-=======
-    def __init__(self, gp, num_of_hal_vals=21, num_of_samples=600, num_of_rep_points=20):
->>>>>>> 12a72e9f002c95a9e59adcd6acfc3c30ebcc7640
 
         #Number of samples for the current candidate
         self._num_of_hallucinated_vals = num_of_hal_vals
@@ -40,8 +36,15 @@ class Entropy(object):
         vals = gp.getValues()
         incumbent = comp[np.argmin(vals)]
 
+#         self._representer_points = sample_from_proposal_measure(incumbent, self._log_proposal_measure,
+#                                                                 num_of_rep_points)
+
         self._representer_points = sample_from_proposal_measure(incumbent, self._log_proposal_measure,
-                                                                num_of_rep_points)
+                                                                num_of_rep_points - 1)
+
+        points = i4_sobol_generate(incumbent.shape[1], 100, 1)
+        print points
+        self._representer_points = np.vstack((self._representer_points, incumbent))
 
         self._log_proposal_vals = np.zeros(self._num_of_representer_points)
 

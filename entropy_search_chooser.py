@@ -22,6 +22,7 @@ import traceback
 
 import tempfile
 import cPickle
+import pickle
 import os
 
 
@@ -40,7 +41,7 @@ class EntropySearchChooser(object):
                  incumbent_inter_sample_distance=20,
                  incumbent_number_of_minima=10,
                  number_of_pmin_samples=1000,
-                 with_plotting=True, with_costs=True):
+                 with_plotting=False, with_costs=False):
 
         seed = np.random.randint(65000)
         log("using seed: " + str(seed))
@@ -132,6 +133,11 @@ class EntropySearchChooser(object):
         log("Number of candidates: " + str(cand.shape[0]))
 
         #Compute entropy of the selected candidates
+        if self._withCosts:
+            log("EntropyWithCosts")
+        else:
+            log("Entropy")
+
         overall_entropy = np.zeros(selected_candidates.shape[0])
 
         for i in xrange(0, len(self._models)):
@@ -168,6 +174,10 @@ class EntropySearchChooser(object):
                 log("Visualizer crashed. Exception: " + traceback.format_exc())
 
         log("Evaluating: " + str(selected_candidates[best_cand]))
+
+        filename = "/home/kleinaa/plots/data_" + str(self._comp.shape[0] - 2) + ".pkl"
+        output = open(filename, 'wb')
+        pickle.dump((self._comp, self._vals), output)
 
         return (len(candidates) + 1, selected_candidates[best_cand])
 
