@@ -132,7 +132,6 @@ def _sample_ls(comp, vals, cov_func, start_point, mean, amp2, noise):
     except Exception as e:
         return handle_slice_sampler_exception(e, start_point, logprob, True)
 
-
 def sample_hyperparameters(mcmc_iters, noiseless, input_points, func_values, cov_func, noise, amp2, ls):
     '''
     Samples hyper parameters for Gaussian processes.
@@ -162,4 +161,43 @@ def sample_hyperparameters(mcmc_iters, noiseless, input_points, func_values, cov
         #This is the order as expected
         log("mean: " + str(mean) + ", noise: " + str(noise) + " amp: " + str(amp2) + ", ls: " + str(ls))
         hyper_samples.append((mean, noise, amp2, ls))
+
     return hyper_samples
+
+
+def sample_hyperparameters_gp(mcmc_iters, noiseless, input_points, func_values, cov_func, noise, amp2, ls):
+    '''
+    Samples hyper parameters for Gaussian processes.
+    Args:
+        mcmc_iters: the number of hyper-parameter samples required
+        noiseless: the modeled function is noiseless
+        input_points: all the points that have been evaluated so far
+        func_values: the corresponding observed function values
+        cov_func: the covariance function the Gaussian process uses
+        noise: a starting value for the noise
+        amp2: a starting value for the amplitude
+        ls: an array of starting values for the length scales (size has to be the dimension of the input points)
+    Returns:
+        a list of hyper-parameter tuples
+        the tuples are of the form (mean, noise, amplitude, [length-scales])
+    '''
+    mean = np.mean(func_values)
+    hyper_samples = []
+    # sample hyper parameters
+    for i in xrange(0, mcmc_iters ):
+        if noiseless:
+            noise = 1e-3
+            [mean, amp2] = _sample_mean_amp_noise(input_points, func_values, cov_func, np.array([mean, amp2]), ls )
+        else:
+            [mean, amp2, noise] =_sample_mean_amp_noise(input_points, func_values, cov_func, np.array([mean, amp2, noise]), ls)
+        ls = _sample_ls(input_points, func_values, cov_func, ls, mean, amp2, noise)
+        #This is the order as expected
+        #log("mean: " + str(mean) + ", noise: " + str(noise) + " amp: " + str(amp2) + ", ls: " + str(ls))
+        hyper_samples.append((mean, noise, amp2, ls))
+
+    samples = []
+    for i in xrange(0, mcmc_iters - 1, mcmc_iters / 10):
+        samples.append(hyper_samples[i])
+        log("mean: " + str(hyper_samples[i][0]) + ", noise: " + str(hyper_samples[i][1]) + " amp: " + str(hyper_samples[i][2]) + ", ls: " + str(hyper_samples[i][3]))
+    return samples
+#     return hyper_samples

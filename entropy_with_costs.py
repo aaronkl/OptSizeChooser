@@ -65,7 +65,12 @@ class EntropyWithCosts():
         scale = self._cost_gp.predict(np.array([candidate]))
         scale = np.max([1e-50, scale])
 
-        return kl_divergence / scale
+        #return kl_divergence / scale
+        #return np.exp(kl_divergence) / (scale)
+        #return np.exp(kl_divergence) / np.log(scale)
+        #TODO: comment line above
+        #return (np.exp(kl_divergence) - np.exp(self._kl_divergence_old)) / np.log(scale)
+        return kl_divergence / np.log(scale)
 
     def _sample_measure(self, x):
 
@@ -90,5 +95,7 @@ class EntropyWithCosts():
             number_of_mins = len(mins)
             for m in mins:
                 pmin[m] += 1. / (number_of_mins)
-        pmin += pmin / self._num_of_samples
+
+        pmin = pmin / self._num_of_samples
+
         return pmin

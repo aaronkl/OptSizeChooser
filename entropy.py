@@ -13,7 +13,7 @@ from spearmint.sobol_lib import i4_sobol_generate
 
 class Entropy(object):
 
-    def __init__(self, gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20):
+    def __init__(self, gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20, chain_length=20):
 
         #Number of samples for the current candidate
         self._num_of_hallucinated_vals = num_of_hal_vals
@@ -36,20 +36,27 @@ class Entropy(object):
         vals = gp.getValues()
         incumbent = comp[np.argmin(vals)]
 
+        points = i4_sobol_generate(self._gp.getPoints().shape[1], 100, 1)
+
+        ei_vals = np.zeros([points.shape[1]])
+        for i in xrange(0, points.shape[1]):
+            ei_vals[i] = compute_expected_improvement(points[:, i], self._gp)
+
+        idx = np.argmax(ei_vals)
+        start_point = points[:, idx]
 #         self._representer_points = sample_from_proposal_measure(incumbent, self._log_proposal_measure,
 #                                                                 num_of_rep_points)
 
-        self._representer_points = sample_from_proposal_measure(incumbent, self._log_proposal_measure,
-                                                                num_of_rep_points - 1)
+        self._representer_points = sample_from_proposal_measure(start_point, self._log_proposal_measure,
+                                                                num_of_rep_points - 1, chain_length)
 
-        points = i4_sobol_generate(incumbent.shape[1], 100, 1)
-        print points
         self._representer_points = np.vstack((self._representer_points, incumbent))
 
         self._log_proposal_vals = np.zeros(self._num_of_representer_points)
 
         for i in range(0, self._num_of_representer_points):
             self._log_proposal_vals[i] = self._log_proposal_measure(self._representer_points[i])
+
 
     def _log_proposal_measure(self, x):
 

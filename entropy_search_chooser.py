@@ -9,14 +9,13 @@ import numpy.random as npr
 import scipy.optimize as spo
 
 from spearmint.util import unpack_args
-from checkbox.properties import Time
 from multiprocessing import Pool
 from spearmint.helpers import log
 
 from .gp_model import GPModel, fetchKernel, getNumberOfParameters
 from .entropy import Entropy
 from .entropy_with_costs import EntropyWithCosts
-from .hyper_parameter_sampling import sample_hyperparameters
+from .hyper_parameter_sampling import sample_hyperparameters, sample_hyperparameters_gp
 from .support import compute_pmin_bins, sample_from_proposal_measure
 import traceback
 
@@ -35,13 +34,21 @@ class EntropySearchChooser(object):
 #TODO: Adjust the parameters and remove unused parameters
     def __init__(self, expt_dir, covar='Matern52', cost_covar='Polynomial3',
                  mcmc_iters=10,
-                 pending_samples=100, noiseless=False, burnin=100,
+                 pending_samples=100,
+                 noiseless=True,
+                 burnin=100,
                  grid_subset=20,
-                 num_of_cands=100,
+                 num_of_cands=1000,
                  incumbent_inter_sample_distance=20,
                  incumbent_number_of_minima=10,
                  number_of_pmin_samples=1000,
-                 with_plotting=False, with_costs=False):
+                 number_of_hal_vals=21,
+                 number_of_representers=20,
+                 chain_length_representers=20,
+                 chain_length_gp=100,
+                 with_plotting=False,
+                 with_costs=False,
+                 path="/home/kleinaa/plots/data/"):
 
         seed = np.random.randint(65000)
         log("using seed: " + str(seed))
@@ -50,6 +57,20 @@ class EntropySearchChooser(object):
         self.pending_samples = pending_samples
         self.grid_subset = grid_subset
         self.expt_dir = expt_dir
+        self._num_of_candidates = num_of_cands
+
+        #Parameters for entropy
+        self._withCosts = bool(with_costs)
+        self._num_of_hal_vals = number_of_hal_vals
+        self._num_of_rep_points = number_of_representers
+        self._chain_length_rep = chain_length_representers
+        self._incumbent_inter_sample_distance = int(incumbent_inter_sample_distance)
+        self._incumbent_number_of_minima = int(incumbent_number_of_minima)
+        self._number_of_pmin_samples = number_of_pmin_samples
+
+        #Parameters for GP
+        #TODO: Do a real sampling with chain length instead of picking every 10th gp
+        self._chain_length_gp = chain_length_gp #times 10
         self._hyper_samples = []
         self._cost_func_hyper_param = []
         self._is_initialized = False
@@ -61,14 +82,8 @@ class EntropySearchChooser(object):
         self._cost_covar = cost_covar
         self._cost_cov_func, _ = fetchKernel(cost_covar)
 
-        self._num_of_candidates = num_of_cands
-
-        self._incumbent_inter_sample_distance = int(incumbent_inter_sample_distance)
-        self._incumbent_number_of_minima = int(incumbent_number_of_minima)
-        self._number_of_pmin_samples = number_of_pmin_samples
-
-        #Flags
-        self._withCosts = bool(with_costs)
+        #Flags and parameter for debugging
+        self._path = path
         self._with_plotting = bool(with_plotting)
 
     def _real_init(self, dims, comp, values, durations):
@@ -125,19 +140,13 @@ class EntropySearchChooser(object):
         mins = self._find_local_minima(self._comp, self._vals, self._models, cand)
         pmin = self._compute_pmin_probabilities(self._models, mins)
         incumbent = mins[np.argmax(pmin)]
-        log("Incumbent: " + str(incumbent))
-        #Take candidate that will be optimized
+
         #selected_candidates = cand[:self._num_of_candidates]
         selected_candidates = cand
-        selected_candidates = np.vstack((selected_candidates, mins))
-        log("Number of candidates: " + str(cand.shape[0]))
+        selected_candidates = np.vstack((cand, mins))
+        #TODO: remove already evaluated points
 
         #Compute entropy of the selected candidates
-        if self._withCosts:
-            log("EntropyWithCosts")
-        else:
-            log("Entropy")
-
         overall_entropy = np.zeros(selected_candidates.shape[0])
 
         for i in xrange(0, len(self._models)):
@@ -167,17 +176,31 @@ class EntropySearchChooser(object):
                                                                 selected_candidates[best_cand],
                                                                 selected_candidates,
                                                                 entropy_values=overall_entropy,
-                                                                incumbent=incumbent)
+                                                                incumbent=incumbent,
+                                                                rep=self._rep_points)
                 else:
                     log("No Visualizer available for more than 2 dimensional problems.")
             except Exception, e:
                 log("Visualizer crashed. Exception: " + traceback.format_exc())
 
+        if self._withCosts:
+            log("EntropyWithCosts")
+        else:
+            log("Entropy")
+        log("Incumbent: " + str(incumbent))
+        log("Number of candidates: " + str(selected_candidates.shape[0]))
+        log("Number of hallucinated values: " + str(self._num_of_hal_vals))
+        log("Number of draws from the gp: " + str(self._number_of_pmin_samples))
+        log("Number of representer points: " + str(self._num_of_rep_points))
+        log("Number of chain length of representer points: " + str(self._chain_length_rep))
+        log("Chain length for Sampling the hyperparameters of the GP: " + str(self._chain_length_gp / 10))
+
         log("Evaluating: " + str(selected_candidates[best_cand]))
 
-        filename = "/home/kleinaa/plots/data_" + str(self._comp.shape[0] - 2) + ".pkl"
-        output = open(filename, 'wb')
-        pickle.dump((self._comp, self._vals), output)
+        #Debug Information
+        filename = self._path + "data_" + str(self._comp.shape[0] - 2) + ".pkl"
+        #output = open(filename, 'wb')
+        #pickle.dump((self._comp, self._vals, self._hyper_samples, incumbent, selected_candidates, self._rep_points), output)
 
         return (len(candidates) + 1, selected_candidates[best_cand])
 
@@ -185,14 +208,16 @@ class EntropySearchChooser(object):
 
         entropy = np.zeros(cand.shape[0])
         if(self._withCosts == True):
-            entropy_estimator = EntropyWithCosts(model, cost_model)
+            entropy_estimator = EntropyWithCosts(model, cost_model, )
             #entropy = map(entropy_estimator.compute, cand)
             for i in xrange(0, cand.shape[0]):
                 entropy[i] = entropy_estimator.compute(cand[i])
 
         else:
-            entropy_estimator = Entropy(model)
+            entropy_estimator = Entropy(model, self._num_of_hal_vals, self._number_of_pmin_samples, self._num_of_rep_points, self._chain_length_rep)
             entropy = map(entropy_estimator.compute, cand)
+
+        self._rep_points = entropy_estimator._representer_points
 
         return entropy
 
@@ -204,8 +229,25 @@ class EntropySearchChooser(object):
 
         log("last hyper parameters: " +
             str(self._hyper_samples[len(self._hyper_samples) - 1]))
+#
+#         self._hyper_samples = sample_hyperparameters(self._mcmc_iters,
+#                                                      self._noiseless,
+#                                                      self._comp, self._vals,
+#                                                      self._cov_func, noise,
+#                                                      amp2, ls)
+#
+#         (_, noise, amp2, ls) = self._cost_func_hyper_param[len(self._cost_func_hyper_param) - 1]
+#
+#         self._cost_func_hyper_param = sample_hyperparameters(
+#                                                 self._mcmc_iters,
+#                                                 self._noiseless,
+#                                                 self._comp, durs,
+#                                                 self._cost_cov_func,
+#                                                 noise, amp2, ls)
 
-        self._hyper_samples = sample_hyperparameters(self._mcmc_iters,
+        #TODO: make the chain length flexible
+        self._hyper_samples = sample_hyperparameters_gp(
+                                                     self._chain_length_gp,
                                                      self._noiseless,
                                                      self._comp, self._vals,
                                                      self._cov_func, noise,
@@ -213,8 +255,8 @@ class EntropySearchChooser(object):
 
         (_, noise, amp2, ls) = self._cost_func_hyper_param[len(self._cost_func_hyper_param) - 1]
 
-        self._cost_func_hyper_param = sample_hyperparameters(
-                                                self._mcmc_iters,
+        self._cost_func_hyper_param = sample_hyperparameters_gp(
+                                                self._chain_length_gp,
                                                 self._noiseless,
                                                 self._comp, durs,
                                                 self._cost_cov_func,
