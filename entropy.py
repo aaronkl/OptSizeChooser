@@ -57,7 +57,6 @@ class Entropy(object):
         for i in range(0, self._num_of_representer_points):
             self._log_proposal_vals[i] = self._log_proposal_measure(self._representer_points[i])
 
-
     def _log_proposal_measure(self, x):
 
         if np.any(x < 0) or np.any(x > 1):
@@ -68,5 +67,6 @@ class Entropy(object):
         return np.log(v + 1e-10)
 
     def compute(self, candidate):
+
         return -compute_kl_divergence(candidate, self._representer_points, self._log_proposal_vals,
                                       self._gp, self._Omega, self._hallucinated_vals)

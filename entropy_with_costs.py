@@ -32,6 +32,7 @@ class EntropyWithCosts():
                                                                            num_of_rep_points)
         self._representer_points = np.empty([num_of_rep_points, comp.shape[1]])
         self._log_proposal_vals = np.zeros(num_of_rep_points)
+
         #the representers miss the first coordinate: we need to add it here.
         for i in range(0, num_of_rep_points):
             self._log_proposal_vals[i] = self._sample_measure(representers[i])

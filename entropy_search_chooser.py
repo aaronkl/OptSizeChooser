@@ -31,7 +31,7 @@ def init(expt_dir, arg_string):
 
 
 class EntropySearchChooser(object):
-#TODO: Adjust the parameters and remove unused parameters
+
     def __init__(self, expt_dir, covar='Matern52', cost_covar='Polynomial3',
                  mcmc_iters=10,
                  pending_samples=100,
@@ -69,7 +69,7 @@ class EntropySearchChooser(object):
         self._number_of_pmin_samples = number_of_pmin_samples
 
         #Parameters for GP
-        #TODO: Do a real sampling with chain length instead of picking every 10th gp
+        #TODO: Do a real sampling with the specified chain length instead of picking every 10th gp
         self._chain_length_gp = chain_length_gp #times 10
         self._hyper_samples = []
         self._cost_func_hyper_param = []
@@ -142,7 +142,6 @@ class EntropySearchChooser(object):
         incumbent = mins[np.argmax(pmin)]
 
         #selected_candidates = cand[:self._num_of_candidates]
-        selected_candidates = cand
         selected_candidates = np.vstack((cand, mins))
         #TODO: remove already evaluated points
 
@@ -158,7 +157,6 @@ class EntropySearchChooser(object):
         best_cand = np.argmax(overall_entropy)
 
         if(self._with_plotting):
-            #we don't want problems in the visualizer disturb the experiments
             try:
                 log("Visualizing ...")
                 if cand.shape[1] == 1:
@@ -183,6 +181,9 @@ class EntropySearchChooser(object):
             except Exception, e:
                 log("Visualizer crashed. Exception: " + traceback.format_exc())
 
+        '''
+            Debug Information
+        '''
         if self._withCosts:
             log("EntropyWithCosts")
         else:
@@ -197,7 +198,6 @@ class EntropySearchChooser(object):
 
         log("Evaluating: " + str(selected_candidates[best_cand]))
 
-        #Debug Information
         filename = self._path + "data_" + str(self._comp.shape[0] - 2) + ".pkl"
         #output = open(filename, 'wb')
         #pickle.dump((self._comp, self._vals, self._hyper_samples, incumbent, selected_candidates, self._rep_points), output)
@@ -209,7 +209,6 @@ class EntropySearchChooser(object):
         entropy = np.zeros(cand.shape[0])
         if(self._withCosts == True):
             entropy_estimator = EntropyWithCosts(model, cost_model, )
-            #entropy = map(entropy_estimator.compute, cand)
             for i in xrange(0, cand.shape[0]):
                 entropy[i] = entropy_estimator.compute(cand[i])
 
@@ -290,13 +289,16 @@ class EntropySearchChooser(object):
         Returns:
             a numpy vector containing for each candidate the probability to be the minimum
         '''
+
         pmin = np.zeros(candidates.shape[0])
         number_of_models = len(model_list)
+
         for model in model_list:
             m, L = model.getCholeskyForJointSample(candidates)
             #use different Omega for different GPs
             Omega = npr.normal(0, 1, (self._number_of_pmin_samples, candidates.shape[0]))
             pmin += compute_pmin_bins(Omega, m, L) / number_of_models
+
         return pmin
 
     def _find_local_minima(self, evaluated, values, model_list, candidates):
@@ -310,10 +312,12 @@ class EntropySearchChooser(object):
         Returns:
             a numpy matrix of local minima
         '''
+
         def objective_function(x, gradients=False):
             if np.any(x < 0) or np.any(x > 1):
                 return -np.infty
             return self._objective_function(x, model_list, gradients)
+
         #TODO: Could it be a good idea start with the maximum instead? To find more local minima?
         #TODO: Actually we should take the best candidate of all candidates in the Sobol sequence.
         starting_point = evaluated[np.argmin(values)]
@@ -325,6 +329,7 @@ class EntropySearchChooser(object):
         for i in xrange(0, starting_point.shape[0]):
             opt_bounds.append((0, 1))
         minima = []
+
         for i in range(0, sampled_points.shape[0]):
             optimized = spo.fmin_l_bfgs_b(self._objective_function, sampled_points[i].flatten(), args=(model_list, True),
                                           bounds=opt_bounds, disp=0)
@@ -346,6 +351,7 @@ class EntropySearchChooser(object):
                     break
             if append:
                 minima.append(optimized)
+
         return np.array(minima)
 
     def _objective_function(self, x, model_list, gradients=False):
@@ -358,6 +364,7 @@ class EntropySearchChooser(object):
         Returns:
             the value or if gradients is True additionally a numpy vector containing the gradients
         '''
+
         return self._objective_function_naive(x, model_list, gradients)
 
     def _objective_function_naive(self, x, model_list, gradients=False):
@@ -370,21 +377,26 @@ class EntropySearchChooser(object):
         Returns:
             the value or if gradients is True additionally a numpy vector containing the gradients
         '''
+
         x = np.array([x])
         #will contain mean and standard deviation prediction for each GP
         mean_std = np.zeros([self._mcmc_iters, 2, 1])
         for i in range(0, self._mcmc_iters):
             mean_std[i] = model_list[i].predict(x, True)
+
         #take square root to get standard deviation
         mean_std[:, 1] = np.sqrt(mean_std[:, 1])
         if not gradients:
             return np.sum(mean_std) / self._mcmc_iters
+
         mean_std_gradients = np.zeros([self._mcmc_iters, x.shape[1]])
+
         for i in range(0, self._mcmc_iters):
             mg, vg = model_list[i].getGradients(x[0])
             #getGradient returns the gradient of the variance - to get the gradients of the standard deviation
             # we need to apply chain rule (s(x)=sqrt[v(x)] => s'(x) = 1/2 * v'(x) / sqrt[v(x)]
             stdg = 0.5 * vg / mean_std[i, 1]
             mean_std_gradients[i] = (mg + stdg) / self._mcmc_iters
+
         #since we want to minimize, we have to turn the sign of the gradient
         return (np.sum(mean_std) / self._mcmc_iters, np.sum(mean_std_gradients, axis=0))

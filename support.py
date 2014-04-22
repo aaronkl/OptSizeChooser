@@ -41,11 +41,14 @@ def compute_pmin_bins(Omega, mean, L):
     #TODO: inefficient to compute idx here?
     idx = np.arange(0, number_of_samples)
     Y = mean[:, np.newaxis] + np.dot(L, Omega.T)
+
     min_idx = np.argmin(Y, axis=0)
     mins = np.zeros([mean.shape[0], number_of_samples])
     mins[min_idx, idx] = 1
+
     pmin = np.sum(mins, axis=1)
     pmin = 1. / number_of_samples * pmin
+
     return pmin
 
 
@@ -66,6 +69,7 @@ def compute_kl_divergence(candidate, representer_points, log_proposal_vals, gp, 
     Returns:
         the expected Kullback-Leibler divergence
     '''
+
     num_of_hallucinated_vals = normal_samples.shape[0]
     num_of_samples = Omega.shape[0]
     idx = np.arange(0, num_of_samples)
@@ -77,17 +81,22 @@ def compute_kl_divergence(candidate, representer_points, log_proposal_vals, gp, 
     mean = np.copy(mean[1:])
     L = np.copy(L[1:, 1:])
     LdotOmegaT = np.dot(L, Omega.T)
+
     for i in range(0, num_of_hallucinated_vals):
         m = mean + l * normal_samples[i]
         vals = m[:, np.newaxis] + LdotOmegaT
+
         mins_idx = np.argmin(vals, axis=0)
         mins = np.zeros(vals.shape)
         mins[mins_idx, idx] = 1
+
         pmin = np.sum(mins, axis=1)
         pmin = pmin / num_of_samples
+
         entropy_pmin = -np.dot(pmin, np.log(pmin + 1e-50))
         log_proposal = np.dot(log_proposal_vals, pmin)
         kl_divergence += (entropy_pmin - log_proposal) / num_of_hallucinated_vals
+
     return kl_divergence
 
 
@@ -101,8 +110,10 @@ def sample_from_proposal_measure(starting_point, log_proposal_measure, number_of
     Returns:
         a numpy array containing the desired number of samples
     '''
+
     representer_points = np.zeros([number_of_points, starting_point.shape[0]])
     #TODO: burnin?
+
     for i in range(0, number_of_points):
         #this for loop ensures better mixing
         for c in range(0, chain_length):
@@ -110,5 +121,7 @@ def sample_from_proposal_measure(starting_point, log_proposal_measure, number_of
                 starting_point = slice_sample(starting_point, log_proposal_measure)
             except Exception as e:
                 starting_point = handle_slice_sampler_exception(e, starting_point, log_proposal_measure)
+
         representer_points[i] = starting_point
+
     return representer_points
