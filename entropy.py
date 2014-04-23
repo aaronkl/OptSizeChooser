@@ -38,18 +38,18 @@ class Entropy(object):
 
         points = i4_sobol_generate(self._gp.getPoints().shape[1], 100, 1)
 
+        #Evaluate EI of a sobel gird to find a good starting point to sample the representer points
         ei_vals = np.zeros([points.shape[1]])
         for i in xrange(0, points.shape[1]):
             ei_vals[i] = compute_expected_improvement(points[:, i], self._gp)
 
         idx = np.argmax(ei_vals)
         start_point = points[:, idx]
-#         self._representer_points = sample_from_proposal_measure(incumbent, self._log_proposal_measure,
-#                                                                 num_of_rep_points)
 
         self._representer_points = sample_from_proposal_measure(start_point, self._log_proposal_measure,
                                                                 num_of_rep_points - 1, chain_length)
 
+        #Add the incumbent to the representer points
         self._representer_points = np.vstack((self._representer_points, incumbent))
 
         self._log_proposal_vals = np.zeros(self._num_of_representer_points)

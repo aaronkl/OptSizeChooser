@@ -47,7 +47,7 @@ class EntropySearchChooser(object):
                  chain_length_representers=20,
                  chain_length_gp=100,
                  with_plotting=False,
-                 with_costs=False,
+                 with_costs=True,
                  path="/home/kleinaa/plots/data/"):
 
         seed = np.random.randint(65000)
@@ -199,8 +199,8 @@ class EntropySearchChooser(object):
         log("Evaluating: " + str(selected_candidates[best_cand]))
 
         filename = self._path + "data_" + str(self._comp.shape[0] - 2) + ".pkl"
-        #output = open(filename, 'wb')
-        #pickle.dump((self._comp, self._vals, self._hyper_samples, incumbent, selected_candidates, self._rep_points), output)
+        output = open(filename, 'wb')
+        pickle.dump((self._comp, self._vals, self._hyper_samples, incumbent, selected_candidates, self._rep_points), output)
 
         return (len(candidates) + 1, selected_candidates[best_cand])
 
@@ -208,7 +208,7 @@ class EntropySearchChooser(object):
 
         entropy = np.zeros(cand.shape[0])
         if(self._withCosts == True):
-            entropy_estimator = EntropyWithCosts(model, cost_model, )
+            entropy_estimator = EntropyWithCosts(model, cost_model, self._num_of_hal_vals, self._number_of_pmin_samples, self._num_of_rep_points, self._chain_length_rep)
             for i in xrange(0, cand.shape[0]):
                 entropy[i] = entropy_estimator.compute(cand[i])
 

@@ -7,16 +7,16 @@ This class extends EntropySearch to be used for big data sets. I.e. it incorpora
 and it ASSUMES that the first value of a point is the data set size.
 '''
 import numpy as np
-from .support import compute_expected_improvement, compute_kl_divergence
+from .support import compute_expected_improvement, compute_kl_divergence, sample_from_proposal_measure
 from scipy.stats import norm
 from spearmint.sobol_lib import i4_sobol_generate
 from spearmint.util import slice_sample
-from .hyper_parameter_sampling import sample_from_proposal_measure
+#from .hyper_parameter_sampling import sample_from_proposal_measure
 
 
 class EntropyWithCosts():
 
-    def __init__(self, gp, cost_gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20):
+    def __init__(self, gp, cost_gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20, chain_length=20):
 
         self._gp = gp
         self._cost_gp = cost_gp
@@ -27,17 +27,30 @@ class EntropyWithCosts():
         comp = gp.getPoints()
         vals = gp.getValues()
 
-        starting_point = comp[np.argmin(vals)][1:]
-        representers = sample_from_proposal_measure(starting_point, self._sample_measure,
-                                                                           num_of_rep_points)
+        points = i4_sobol_generate(self._gp.getPoints().shape[1], 100, 1)
+        points[0, :] = 1
+
+        #Evaluate EI of a sobel gird to find a good starting point to sample the representer points
+        ei_vals = np.zeros([points.shape[1]])
+        for i in xrange(0, points.shape[1]):
+            ei_vals[i] = compute_expected_improvement(points[:, i], self._gp)
+
+        idx = np.argmax(ei_vals)
+        starting_point = points[:, idx]
+        starting_point = starting_point[1:]
+
+        representers = sample_from_proposal_measure(starting_point, self._sample_measure, num_of_rep_points - 1, chain_length)
         self._representer_points = np.empty([num_of_rep_points, comp.shape[1]])
         self._log_proposal_vals = np.zeros(num_of_rep_points)
 
-        #the representers miss the first coordinate: we need to add it here.
-        for i in range(0, num_of_rep_points):
+        for i in range(0, num_of_rep_points - 1):
             self._log_proposal_vals[i] = self._sample_measure(representers[i])
             #set first value to one
             self._representer_points[i] = np.insert(representers[i], 0, 1)
+
+        incumbent = comp[np.argmin(vals)][1:]
+        self._representer_points[-1] = np.insert(incumbent, 0, 1)
+        self._log_proposal_vals[-1] = self._sample_measure(incumbent)
 
         #as fortran array Omega.T is C-contiguous which speeds up dot product computation
         self._Omega = np.asfortranarray(np.random.normal(0, 1, (self._num_of_samples,
@@ -49,6 +62,7 @@ class EntropyWithCosts():
 
         #TODO: Change it to vector computation
         self._pmin_old = self._compute_pmin_old(self._gp)
+
         entropy_pmin_old = -np.dot(self._pmin_old, np.log(self._pmin_old + 1e-50))
 
         log_proposal_old = np.dot(self._log_proposal_vals, self._pmin_old)
@@ -66,12 +80,12 @@ class EntropyWithCosts():
         scale = self._cost_gp.predict(np.array([candidate]))
         scale = np.max([1e-50, scale])
 
-        #return kl_divergence / scale
+        return kl_divergence / scale
         #return np.exp(kl_divergence) / (scale)
         #return np.exp(kl_divergence) / np.log(scale)
         #TODO: comment line above
         #return (np.exp(kl_divergence) - np.exp(self._kl_divergence_old)) / np.log(scale)
-        return kl_divergence / np.log(scale)
+        #return kl_divergence / np.log(scale)
 
     def _sample_measure(self, x):
 
