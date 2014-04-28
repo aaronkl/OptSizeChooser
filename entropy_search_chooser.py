@@ -34,6 +34,7 @@ class EntropySearchChooser(object):
 
     def __init__(self, expt_dir, covar='Matern52', cost_covar='Polynomial3',
                  mcmc_iters=10,
+                 gp_inter_sample_distance=1,
                  pending_samples=100,
                  noiseless=True,
                  burnin=100,
@@ -45,15 +46,17 @@ class EntropySearchChooser(object):
                  number_of_hal_vals=21,
                  number_of_representers=20,
                  chain_length_representers=20,
-                 chain_length_gp=100,
                  with_plotting=False,
                  with_costs=True,
-                 path="/home/kleinaa/plots/data/",
+                 path=None,
                  transformation=1):
         '''
         Default constructor.
         Args:
+            mcmc_iters: the number of Gaussian processes to use
+            gp_inter_sample_distance: how many hyper-parameter samples are skipped
             transformation: integer defining how the ES acquisition function with costs is transformed
+
         '''
 
         seed = np.random.randint(65000)
@@ -63,25 +66,24 @@ class EntropySearchChooser(object):
         self.pending_samples = pending_samples
         self.grid_subset = grid_subset
         self.expt_dir = expt_dir
-        self._num_of_candidates = num_of_cands
+        self._num_of_candidates = int(num_of_cands)
 
         #Parameters for entropy
         self._withCosts = bool(with_costs)
-        self._num_of_hal_vals = number_of_hal_vals
-        self._num_of_rep_points = number_of_representers
-        self._chain_length_rep = chain_length_representers
+        self._num_of_hal_vals = int(number_of_hal_vals)
+        self._num_of_rep_points = int(number_of_representers)
+        self._chain_length_rep = int(chain_length_representers)
         self._incumbent_inter_sample_distance = int(incumbent_inter_sample_distance)
         self._incumbent_number_of_minima = int(incumbent_number_of_minima)
-        self._number_of_pmin_samples = number_of_pmin_samples
+        self._number_of_pmin_samples = int(number_of_pmin_samples)
         self._transformation = int(transformation)
 
         #Parameters for GP
-        #TODO: Do a real sampling with the specified chain length instead of picking every 10th gp
-        self._chain_length_gp = chain_length_gp #times 10
         self._hyper_samples = []
         self._cost_func_hyper_param = []
         self._is_initialized = False
         self._mcmc_iters = int(mcmc_iters)
+        self._gp_inter_sample_distance = int(gp_inter_sample_distance)
         self._noiseless = noiseless
         self._burnin = burnin
         self._covar = covar
@@ -90,6 +92,8 @@ class EntropySearchChooser(object):
         self._cost_cov_func, _ = fetchKernel(cost_covar)
 
         #Flags and parameter for debugging
+        if path is None:
+            path = expt_dir
         self._path = path
         self._with_plotting = bool(with_plotting)
 
@@ -144,6 +148,7 @@ class EntropySearchChooser(object):
 
         cand = grid[candidates, :]
 
+        log("Computing incumbent.")
         mins = self._find_local_minima(self._comp, self._vals, self._models, cand)
         pmin = self._compute_pmin_probabilities(self._models, mins)
         incumbent = mins[np.argmax(pmin)]
@@ -155,6 +160,7 @@ class EntropySearchChooser(object):
         #Compute entropy of the selected candidates
         overall_entropy = np.zeros(selected_candidates.shape[0])
 
+        log("Computing acquisition function values for all candidates for all models.")
         for i in xrange(0, len(self._models)):
             overall_entropy += self._entropy_search(selected_candidates,
                                                     self._models[i],
@@ -236,25 +242,8 @@ class EntropySearchChooser(object):
 
         log("last hyper parameters: " +
             str(self._hyper_samples[len(self._hyper_samples) - 1]))
-#
-#         self._hyper_samples = sample_hyperparameters(self._mcmc_iters,
-#                                                      self._noiseless,
-#                                                      self._comp, self._vals,
-#                                                      self._cov_func, noise,
-#                                                      amp2, ls)
-#
-#         (_, noise, amp2, ls) = self._cost_func_hyper_param[len(self._cost_func_hyper_param) - 1]
-#
-#         self._cost_func_hyper_param = sample_hyperparameters(
-#                                                 self._mcmc_iters,
-#                                                 self._noiseless,
-#                                                 self._comp, durs,
-#                                                 self._cost_cov_func,
-#                                                 noise, amp2, ls)
 
-        #TODO: make the chain length flexible
-        self._hyper_samples = sample_hyperparameters_gp(
-                                                     self._chain_length_gp,
+        self._hyper_samples = sample_hyperparameters(self._mcmc_iters * self._gp_inter_sample_distance,
                                                      self._noiseless,
                                                      self._comp, self._vals,
                                                      self._cov_func, noise,
@@ -262,8 +251,8 @@ class EntropySearchChooser(object):
 
         (_, noise, amp2, ls) = self._cost_func_hyper_param[len(self._cost_func_hyper_param) - 1]
 
-        self._cost_func_hyper_param = sample_hyperparameters_gp(
-                                                self._chain_length_gp,
+        self._cost_func_hyper_param = sample_hyperparameters(
+                                                self._mcmc_iters * self._gp_inter_sample_distance,
                                                 self._noiseless,
                                                 self._comp, durs,
                                                 self._cost_cov_func,
@@ -272,7 +261,7 @@ class EntropySearchChooser(object):
         self._models = []
         self._cost_models = []
 
-        for h in range(0, len(self._hyper_samples)):
+        for h in range(0, len(self._hyper_samples), self._gp_inter_sample_distance):
             hyper = self._hyper_samples[h]
             gp = GPModel(self._comp, self._vals, hyper[0], hyper[1],
                          hyper[2], hyper[3], self._covar)
