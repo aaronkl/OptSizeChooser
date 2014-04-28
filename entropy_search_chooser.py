@@ -48,7 +48,13 @@ class EntropySearchChooser(object):
                  chain_length_gp=100,
                  with_plotting=False,
                  with_costs=True,
-                 path="/home/kleinaa/plots/data/"):
+                 path="/home/kleinaa/plots/data/",
+                 transformation=1):
+        '''
+        Default constructor.
+        Args:
+            transformation: integer defining how the ES acquisition function with costs is transformed
+        '''
 
         seed = np.random.randint(65000)
         log("using seed: " + str(seed))
@@ -67,6 +73,7 @@ class EntropySearchChooser(object):
         self._incumbent_inter_sample_distance = int(incumbent_inter_sample_distance)
         self._incumbent_number_of_minima = int(incumbent_number_of_minima)
         self._number_of_pmin_samples = number_of_pmin_samples
+        self._transformation = int(transformation)
 
         #Parameters for GP
         #TODO: Do a real sampling with the specified chain length instead of picking every 10th gp
@@ -208,7 +215,8 @@ class EntropySearchChooser(object):
 
         entropy = np.zeros(cand.shape[0])
         if(self._withCosts == True):
-            entropy_estimator = EntropyWithCosts(model, cost_model, self._num_of_hal_vals, self._number_of_pmin_samples, self._num_of_rep_points, self._chain_length_rep)
+            entropy_estimator = EntropyWithCosts(model, cost_model, self._num_of_hal_vals, self._number_of_pmin_samples,
+                                                 self._num_of_rep_points, self._chain_length_rep, self._transformation)
             for i in xrange(0, cand.shape[0]):
                 entropy[i] = entropy_estimator.compute(cand[i])
 

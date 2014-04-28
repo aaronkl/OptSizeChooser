@@ -16,13 +16,17 @@ from spearmint.util import slice_sample
 
 class EntropyWithCosts():
 
-    def __init__(self, gp, cost_gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20, chain_length=20):
+    def __init__(self, gp, cost_gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20, chain_length=20,
+                 transformation=1):
 
         self._gp = gp
         self._cost_gp = cost_gp
         self._num_of_hallucinated_vals = num_of_hal_vals
         self._num_of_samples = num_of_samples
         self._num_of_representer_points = num_of_rep_points
+        if transformation not in range(1, 11):
+            raise NotImplementedError("There exists no transformation with number " + str(transformation))
+        self._transformation = transformation
 
         comp = gp.getPoints()
         vals = gp.getValues()
@@ -78,14 +82,28 @@ class EntropyWithCosts():
         kl_divergence = kl_divergence - self._kl_divergence_old
 
         scale = self._cost_gp.predict(np.array([candidate]))
-        scale = np.max([1e-50, scale])
+        scale = np.max([1e1, scale])
 
-        return kl_divergence / scale
-        #return np.exp(kl_divergence) / (scale)
-        #return np.exp(kl_divergence) / np.log(scale)
-        #TODO: comment line above
-        #return (np.exp(kl_divergence) - np.exp(self._kl_divergence_old)) / np.log(scale)
-        #return kl_divergence / np.log(scale)
+        if self._transformation == 1:
+            return kl_divergence / scale
+        elif self._transformation == 2:
+            return np.exp(kl_divergence) / scale
+        elif self._transformation == 3:
+            return kl_divergence / np.log(scale)
+        elif self._transformation == 4:
+            return np.exp(kl_divergence) / np.log(scale)
+        elif self._transformation == 5:
+            return (np.exp(kl_divergence) - np.exp(self._kl_divergence_old)) / np.log(scale)
+        elif self._transformation == 6:
+            return np.exp(kl_divergence - self._kl_divergence_old) / np.log(scale)
+        elif self._transformation == 7:
+            return (kl_divergence - self._kl_divergence_old) / np.log(scale)
+        elif self._transformation == 8:
+            return (kl_divergence - self._kl_divergence_old) / scale
+        elif self._transformation == 9:
+            return (np.exp(kl_divergence) - np.exp(self._kl_divergence_old)) / scale
+        elif self._transformation == 10:
+            return np.exp(kl_divergence - self._kl_divergence_old) /scale
 
     def _sample_measure(self, x):
 
