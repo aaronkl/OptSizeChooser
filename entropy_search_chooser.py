@@ -165,6 +165,7 @@ class EntropySearchChooser(object):
             overall_entropy += self._entropy_search(selected_candidates,
                                                     self._models[i],
                                                     self._cost_models[i])
+            log("Model number " + str(i) + " complete.")
         overall_entropy /= len(self._models)
 
         best_cand = np.argmax(overall_entropy)
@@ -207,7 +208,7 @@ class EntropySearchChooser(object):
         log("Number of draws from the gp: " + str(self._number_of_pmin_samples))
         log("Number of representer points: " + str(self._num_of_rep_points))
         log("Number of chain length of representer points: " + str(self._chain_length_rep))
-        log("Chain length for Sampling the hyperparameters of the GP: " + str(self._chain_length_gp / 10))
+        log("Chain length for Sampling the hyperparameters of the GP: " + str(self._mcmc_iters))
 
         log("Evaluating: " + str(selected_candidates[best_cand]))
 
