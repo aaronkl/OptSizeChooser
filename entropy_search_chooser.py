@@ -212,7 +212,7 @@ class EntropySearchChooser(object):
 
         log("Evaluating: " + str(selected_candidates[best_cand]))
 
-        filename = self._path + "data_" + str(self._comp.shape[0] - 2) + ".pkl"
+        filename = os.path.join(self._path, "data_" + str(self._comp.shape[0] - 2) + ".pkl")
         output = open(filename, 'wb')
         pickle.dump((self._comp, self._vals, self._hyper_samples, incumbent, selected_candidates, self._rep_points), output)
 
