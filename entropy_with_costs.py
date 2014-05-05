@@ -78,12 +78,19 @@ class EntropyWithCosts():
 
         kl_divergence = -compute_kl_divergence(candidate, self._representer_points, self._log_proposal_vals,
                                               self._gp, self._Omega, self._hallucinated_vals)
-
-        kl_divergence = kl_divergence - self._kl_divergence_old
-
         scale = self._cost_gp.predict(np.array([candidate]))
-        scale = np.max([1e1, scale])
+        return self._transform(kl_divergence, scale)
 
+    def _transform(self, kl_divergence, scale):
+        '''
+        Transforms the expected Kullback-Leibler divergence and the predicted cost.
+        Args:
+            kl_divergence: log of the expected Kullback-Leibler divergence
+            scale: predicted costs to evaluate the candidate
+        Returns:
+            a scalar
+        '''
+        scale = np.max([1e1, scale])
         if self._transformation == 1:
             return kl_divergence / scale
         elif self._transformation == 2:
