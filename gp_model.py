@@ -387,6 +387,41 @@ def grad_BigData(ls,x1,x2=None):
 def BigData(ls, x1, x2=None, grad=False):
     return _bigData_raw(ls, x1, x2, True, grad)
         
+def _bigData2_raw(ls, x1, x2=None, value=True, grad=False):
+    x11 = 1./x1[:,:1] #get inverse first entry of each vector
+    x12 = x1[:,1:] #get the rest
+    x21 = None
+    x22 = None
+    if not(x2 is None):
+        x21 = x2[:,:1]
+        x22 = x2[:,1:]
+    ls1 = ls[:1]
+    ls2 = ls[1:]
+    return _product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+
+def grad_BigData2(ls,x1,x2=None):
+    return _bigData2_raw(ls, x1, x2, value=False, grad=True)
+
+def BigData2(ls, x1, x2=None, grad=False):
+    return _bigData2_raw(ls, x1, x2, True, grad)
+
+def _bigData3_raw(ls, x1, x2=None, value=True, grad=False):
+    x11 = 1./x1[:,:1] #get inverse first entry of each vector
+    x12 = x1[:,1:] #get the rest
+    x21 = None
+    x22 = None
+    if not(x2 is None):
+        x21 = x2[:,:1]
+        x22 = x2[:,1:]
+    ls1 = ls[:1]
+    ls2 = ls[1:]
+    return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+
+def grad_BigData3(ls,x1,x2=None):
+    return _bigData3_raw(ls, x1, x2, value=False, grad=True)
+
+def BigData3(ls, x1, x2=None, grad=False):
+    return _bigData3_raw(ls, x1, x2, True, grad)
 
 
 class GPModel(object):
