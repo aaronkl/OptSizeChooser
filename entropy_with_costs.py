@@ -17,7 +17,7 @@ from spearmint.util import slice_sample
 class EntropyWithCosts():
 
     def __init__(self, gp, cost_gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20, chain_length=20,
-                 transformation=1):
+                 transformation=8):
 
         self._gp = gp
         self._cost_gp = cost_gp
@@ -92,10 +92,14 @@ class EntropyWithCosts():
         '''
         scale = np.max([1e1, scale])
         if self._transformation == 1:
+	    if kl_divergence < 0:
+		return kl_divergence * scale
             return kl_divergence / scale
         elif self._transformation == 2:
             return np.exp(kl_divergence) / scale
         elif self._transformation == 3:
+	    if kl_divergence < 0:
+		return kl_divergence * np.log(scale)
             return kl_divergence / np.log(scale)
         elif self._transformation == 4:
             return np.exp(kl_divergence) / np.log(scale)
