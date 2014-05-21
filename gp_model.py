@@ -45,23 +45,32 @@ def getNumberOfParameters(covarname, input_dimension):
     except:
         if covarname == 'Polynomial3':
             return 1
+        elif covarname == 'Polynomial':
+            return 1
         elif covarname == 'Linear':
             return 1
         elif covarname == 'LogLinear':
             return getNumberOfParameters('Linear', input_dimension)
         elif covarname == 'Normalized_Polynomial3':
             return getNumberOfParameters('Polynomial3', input_dimension)
-        elif covarname == 'BigData':
+        elif covarname == 'poly_matern_sum' or covarname == 'poly_matern_product' \
+            or covarname == 'log_linear_matern_product':
             return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension-1)
-        elif covarname == 'CostKernel':
-            return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension-1)
-        elif covarname == 'CostKernel2':
-            return getNumberOfParameters('Polynomial3', input_dimension)+getNumberOfParameters('Matern52', input_dimension)
         else:
             raise NotImplementedError('The given covariance function (' + covarname + ') was not found.')
         
         
 def _polynomial3_raw(ls, x1, x2=None, value=True, grad=False):
+    '''
+    Cubic kernel.
+    Args:
+        ls: list of length one, entry will be used as offset
+        x1: numpy matrix
+        x2: numpy matrix with at most one row
+    Returns:
+        (x1.T * x2 + ls[0])^3
+    '''
+    #TODO: use one more length to multiply result with?
     factor = 1
     if x2 is None:
         #in this case k(x,y) has to be considered of the form k(x)
@@ -77,23 +86,48 @@ def _polynomial3_raw(ls, x1, x2=None, value=True, grad=False):
         #compute dk(x1,x2)/dx2
         #=3 * apply(dot, ^2) o x1
         #dk = factor * 3 * (dot ** 2) * x1
+
+        #highly inefficient!
+        #dk = np.array([(factor * 3 * (dot[i] ** 2)) * np.array([x1[i]]) for i in range(0, x1.shape[0])])
+        dk = (factor * 3 * (dot ** 2)) * x1
+
         #this is to get the gradient in spearmint's format
-        dk = np.array([(factor * 3 * (dot[i] ** 2)) * np.array([x1[i]]) for i in range(0, x1.shape[0])])
-        
+        dk = dk[:, np.newaxis]
         #because the spearmint implementations all invert the signs of their gradients we will do so as well
-        dk = -dk        
+        dk = -dk
         if value:
             #we want both: value and gradient
-            k = dot ** 3
+            k = (dot ** 3)
             return (k, dk)
         #we want just the gradient
         return dk
     else:
         #we want just the kernel value
-        k = dot ** 3
+        k = (dot ** 3)
         return k
 
-#TODO: generalize polynomial kernel???
+def _polynomial_raw(ls, x1, x2=None, value=True, grad=False, b=5):
+    factor = 1
+    if x2 is None:
+        factor = 2
+        x2=x1
+    c = ls[0]
+    dot = np.dot(x1, x2.T) + c
+    if grad:
+        dk = factor * b * (dot ** (b-1)) * x1
+        dk = dk[:, np.newaxis]
+        dk = -dk
+        if value:
+            #we want both: value and gradient
+            k = (dot ** b)
+            return (k, dk)
+        #we want just the gradient
+        return dk
+    else:
+        #we want just the kernel value
+        k = (dot ** b)
+        return k
+
 def Linear(ls, x1, x2=None, grad=False):
     factor = 1
     if x2 is None:
@@ -123,19 +157,36 @@ def LogLinear(ls, x1, x2=None, grad=False):
     Linear kernel that puts the inputs on a log scale.
     '''
     if x2 is not None:
+        if grad:
+            (k, dk) = Linear(ls, np.log(x1+1e-15), np.log(x2+1e-15), grad)
+            dk = dk / x2
+            return (k, dk)
+        #else:
         return Linear(ls, np.log(x1+1e-15), np.log(x2+1e-15), grad)
+    #else:
+    if grad:
+        (k, dk) = Linear(ls, np.log(x1+1e-15), None, grad)
+        dk = dk / x1
+        return (k, dk)
+    #else:
     return Linear(ls, np.log(x1+1e-15), None, grad)
 
 def grad_LogLinear(ls, x1, x2=None):
     if x2 is not None:
-        return grad_Linear(ls, np.log(x1+1e-15), np.log(x2+1e-15))
-    return grad_Linear(ls, np.log(x1+1e-15), None)
+        return grad_Linear(ls, np.log(x1+1e-15), np.log(x2+1e-15)) / x2
+    return grad_Linear(ls, np.log(x1+1e-15), None) / x1
 
 def grad_Polynomial3(ls, x1, x2=None):
     return _polynomial3_raw(ls, x1, x2, value=False, grad=True)
 
 def Polynomial3(ls, x1, x2=None, grad=False):
     return _polynomial3_raw(ls, x1, x2, True, grad)
+
+def grad_Polynomial(ls, x1, x2=None):
+    return _polynomial_raw(ls, x1, x2, value=False, grad=True)
+
+def Polynomial(ls, x1, x2=None, grad=False):
+    return _polynomial_raw(ls, x1, x2, True, grad)
 
 def Normalized_Polynomial3(ls, x1, x2=None, grad=False):
     #TODO: quick and dirty, refactor!
@@ -263,25 +314,24 @@ def _sum_kernel_raw_d(kf1, kf2, ls1, ls2, x11, x12, x21=None, x22=None, value=Tr
     Returns:
         either tuple (value, gradient) or single element
     '''
-    num_of_elements = x11.shape[0]
     if not grad:
         #only the value is of interest
         k1 = kf1(ls1, x11, x21)
         k2 = kf2(ls2, x12, x22)
-        k = np.array([k1[i]+k2[i] for i in range(0, num_of_elements)])
+        #k = np.array([k1[i]+k2[i] for i in range(0, k1.shape[0])])
+        k = k1 + k2
         return k
     else:
         (k1, dk1) = kf1(ls1, x11, x21, True)
         (k2, dk2) = kf2(ls2, x12, x22, True)
         #sum rule
-        #dk = dk1+dk2
-        dk = np.array([np.concatenate((dk1[i], dk2[i]), axis=1) 
-                       for i in range(0, num_of_elements)])
+        #dk = (dk1,dk2)
+        dk = np.concatenate((dk1, dk2), axis=2)
         if not value:
             #we care only for the gradient
             return dk
-        k = np.array([k1[i]+k2[i] for i in range(0, num_of_elements)])
-        return (k,dk)
+        k = k1 + k2
+        return (k, dk)
     
 def _product_kernel_raw_d(kf1, kf2, ls1, ls2, x11, x12, x21=None, x22=None, value=True, grad=False):
     '''
@@ -307,45 +357,23 @@ def _product_kernel_raw_d(kf1, kf2, ls1, ls2, x11, x12, x21=None, x22=None, valu
         #only the value is of interest
         k1 = kf1(ls1, x11, x21)
         k2 = kf2(ls2, x12, x22)
-        k = np.array([k1[i]*k2[i] for i in range(0, num_of_elements)])
+        #k = np.array([k1[i]*k2[i] for i in range(0, num_of_elements)])
+        k = k1 * k2
         return k
     else:
         (k1, dk1) = kf1(ls1, x11, x21, True)
         (k2, dk2) = kf2(ls2, x12, x22, True)
         #product rule
-        dk = np.array([np.concatenate((dk1[i]*k2[i], k1[i]*dk2[i]), axis=1) 
+        dk = np.array([np.concatenate((dk1[i]*k2[i], k1[i]*dk2[i]), axis=1)
                        for i in range(0, num_of_elements)])
+        #dk = np.concatenate((dk1[:, np.newaxis] * k2, k1[:, np.newaxis] * dk2), axis=2)
         if not value:
             #we care only for the gradient
             return dk
-        k = np.array([k1[i]*k2[i] for i in range(0, num_of_elements)])
+        k = k1 * k2
         return (k,dk)
     
-def _CostKernel2_raw(ls, x1, x2=None, value=True, grad=False):
-    p = getNumberOfParameters('Polynomial3', x1.shape[1])
-    ls1 = ls[:p]
-    ls2 = ls[p:]
-    return _sum_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, value, grad)
-
-def CostKernel2(ls, x1, x2=None, grad=False):
-    return _CostKernel2_raw(ls, x1, x2, grad)
-
-def grad_CostKernel2(ls, x1, x2=None):
-    return _CostKernel2_raw(ls, x1, x2, False, True)
-
-def _CostKernel3_raw(ls, x1, x2=None, value=True, grad=False):
-    p = getNumberOfParameters('Polynomial3', x1.shape[1])
-    ls1 = ls[:p]
-    ls2 = ls[p:]
-    return _product_kernel_raw(Polynomial3, gp.Matern52, ls1, ls2, x1, x2, value, grad)
-
-def CostKernel3(ls, x1, x2=None, grad=False):
-    return _CostKernel3_raw(ls, x1, x2, grad)
-
-def grad_CostKernel3(ls, x1, x2=None):
-    return _CostKernel3_raw(ls, x1, x2, False, True)
-    
-def CostKernel(ls, x1, x2=None, grad=False):
+def _poly_matern_sum_raw(ls, x1, x2=None, value=True, grad=False):
     ls1 = ls[:1]
     ls2 = ls[1:]
     x11 = x1[:,:1]
@@ -355,9 +383,9 @@ def CostKernel(ls, x1, x2=None, grad=False):
     if x2 is not None:
         x21 = x2[:,:1]
         x22 = x2[:,1:]
-    return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, True, grad)
+    return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 
-def grad_CostKernel(ls, x1, x2=None):
+def _poly_matern_product_raw(ls, x1, x2=None, value=True, grad=False):
     ls1 = ls[:1]
     ls2 = ls[1:]
     x11 = x1[:,:1]
@@ -367,9 +395,9 @@ def grad_CostKernel(ls, x1, x2=None):
     if x2 is not None:
         x21 = x2[:,:1]
         x22 = x2[:,1:]
-    return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, False, True)
+    return _product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 
-def _bigData_raw(ls, x1, x2=None, value=True, grad=False):
+def _log_linear_matern_product_raw(ls, x1, x2=None, value=True, grad=False):
     x11 = x1[:,:1] #get first entry of each vector
     x12 = x1[:,1:] #get the rest
     x21 = None
@@ -381,47 +409,63 @@ def _bigData_raw(ls, x1, x2=None, value=True, grad=False):
     ls2 = ls[1:]
     return _product_kernel_raw_d(LogLinear, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 
-def grad_BigData(ls,x1,x2=None):
-    return _bigData_raw(ls, x1, x2, value=False, grad=True)
+def grad_poly_matern_sum(ls,x1,x2=None):
+    return _poly_matern_sum_raw(ls, x1, x2, value=False, grad=True)
 
-def BigData(ls, x1, x2=None, grad=False):
-    return _bigData_raw(ls, x1, x2, True, grad)
-        
-def _bigData2_raw(ls, x1, x2=None, value=True, grad=False):
-    x11 = 1./x1[:,:1] #get inverse first entry of each vector
+def poly_matern_sum(ls, x1, x2=None, grad=False):
+    '''
+    Sum of polynomial kernel in the first dimension and Matern52 in the remaining dimensions.
+    '''
+    return _poly_matern_sum_raw(ls, x1, x2, True, grad)
+
+def grad_poly_matern_product(ls,x1,x2=None):
+    return _poly_matern_product_raw(ls, x1, x2, value=False, grad=True)
+
+def poly_matern_product(ls, x1, x2=None, grad=False):
+    '''
+    Product of polynomial kernel in the first dimension and Matern52 in the remaining dimensions.
+    '''
+    return _poly_matern_product_raw(ls, x1, x2, True, grad)
+
+def grad_log_linear_matern_product(ls,x1,x2=None):
+    return _log_linear_matern_product_raw(ls, x1, x2, value=False, grad=True)
+
+def log_linear_matern_product(ls, x1, x2=None, grad=False):
+    '''
+    Product of linear kernel in the first dimension (on log scale) and Matern52 in the remaining dimensions.
+    '''
+    return _log_linear_matern_product_raw(ls, x1, x2, True, grad)
+
+def _inverse_poly_matern_product_raw_(ls, x1, x2=None, value=True, grad=False):
+    '''
+    Deprecated.
+    '''
+    x11 = 1./ (x1[:,:1] + 1e-50) #get inverse first entry of each vector
     x12 = x1[:,1:] #get the rest
     x21 = None
     x22 = None
     if not(x2 is None):
-        x21 = x2[:,:1]
+        x21 = 1. / (x2[:,:1] + 1e-50)
         x22 = x2[:,1:]
-    ls1 = ls[:1]
-    ls2 = ls[1:]
-    return _product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
-
-def grad_BigData2(ls,x1,x2=None):
-    return _bigData2_raw(ls, x1, x2, value=False, grad=True)
-
-def BigData2(ls, x1, x2=None, grad=False):
-    return _bigData2_raw(ls, x1, x2, True, grad)
-
-def _bigData3_raw(ls, x1, x2=None, value=True, grad=False):
-    x11 = 1./x1[:,:1] #get inverse first entry of each vector
-    x12 = x1[:,1:] #get the rest
-    x21 = None
-    x22 = None
-    if not(x2 is None):
-        x21 = x2[:,:1]
-        x22 = x2[:,1:]
-    ls1 = ls[:1]
-    ls2 = ls[1:]
-    return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
-
-def grad_BigData3(ls,x1,x2=None):
-    return _bigData3_raw(ls, x1, x2, value=False, grad=True)
-
-def BigData3(ls, x1, x2=None, grad=False):
-    return _bigData3_raw(ls, x1, x2, True, grad)
+    ls1 = ls[:2]
+    ls2 = ls[2:]
+    if grad:
+        if value:
+            (k, dk) =_product_kernel_raw_d(Polynomial, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+            #this is chain rule and using 1/x^2 = (1/x)^2
+            if x2 is None:
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
+            else:
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
+            return (k, dk)
+        else:
+            dk = _product_kernel_raw_d(Polynomial, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+            if x2 is None:
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
+            else:
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
+            return dk
+    return _product_kernel_raw_d(Polynomial, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 
 
 class GPModel(object):
