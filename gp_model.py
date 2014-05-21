@@ -54,7 +54,8 @@ def getNumberOfParameters(covarname, input_dimension):
         elif covarname == 'Normalized_Polynomial3':
             return getNumberOfParameters('Polynomial3', input_dimension)
         elif covarname == 'poly_matern_sum' or covarname == 'poly_matern_product' \
-            or covarname == 'log_linear_matern_product':
+            or covarname == 'log_linear_matern_product' or covarname == 'inverse_poly_matern_product' \
+            or covarname == 'log_linear_matern_sum' or covarname == 'inverse_poly_matern_sum':
             return getNumberOfParameters('Polynomial3', 1)+getNumberOfParameters('Matern52', input_dimension-1)
         else:
             raise NotImplementedError('The given covariance function (' + covarname + ') was not found.')
@@ -409,6 +410,18 @@ def _log_linear_matern_product_raw(ls, x1, x2=None, value=True, grad=False):
     ls2 = ls[1:]
     return _product_kernel_raw_d(LogLinear, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 
+def _log_linear_matern_sum_raw(ls, x1, x2=None, value=True, grad=False):
+    x11 = x1[:,:1] #get first entry of each vector
+    x12 = x1[:,1:] #get the rest
+    x21 = None
+    x22 = None
+    if not(x2 is None):
+        x21 = x2[:,:1]
+        x22 = x2[:,1:]
+    ls1 = ls[:1]
+    ls2 = ls[1:]
+    return _sum_kernel_raw_d(LogLinear, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+
 def grad_poly_matern_sum(ls,x1,x2=None):
     return _poly_matern_sum_raw(ls, x1, x2, value=False, grad=True)
 
@@ -436,10 +449,16 @@ def log_linear_matern_product(ls, x1, x2=None, grad=False):
     '''
     return _log_linear_matern_product_raw(ls, x1, x2, True, grad)
 
-def _inverse_poly_matern_product_raw_(ls, x1, x2=None, value=True, grad=False):
+def grad_log_linear_matern_sum(ls,x1,x2=None):
+    return _log_linear_matern_sum_raw(ls, x1, x2, value=False, grad=True)
+
+def log_linear_matern_sum(ls, x1, x2=None, grad=False):
     '''
-    Deprecated.
+    Sum of linear kernel in the first dimension (on log scale) and Matern52 in the remaining dimensions.
     '''
+    return _log_linear_matern_sum_raw(ls, x1, x2, True, grad)
+
+def _inverse_poly_matern_product_raw(ls, x1, x2=None, value=True, grad=False):
     x11 = 1./ (x1[:,:1] + 1e-50) #get inverse first entry of each vector
     x12 = x1[:,1:] #get the rest
     x21 = None
@@ -447,11 +466,11 @@ def _inverse_poly_matern_product_raw_(ls, x1, x2=None, value=True, grad=False):
     if not(x2 is None):
         x21 = 1. / (x2[:,:1] + 1e-50)
         x22 = x2[:,1:]
-    ls1 = ls[:2]
-    ls2 = ls[2:]
+    ls1 = ls[:1]
+    ls2 = ls[1:]
     if grad:
         if value:
-            (k, dk) =_product_kernel_raw_d(Polynomial, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+            (k, dk) =_product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
             #this is chain rule and using 1/x^2 = (1/x)^2
             if x2 is None:
                 dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
@@ -459,14 +478,59 @@ def _inverse_poly_matern_product_raw_(ls, x1, x2=None, value=True, grad=False):
                 dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
             return (k, dk)
         else:
-            dk = _product_kernel_raw_d(Polynomial, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+            dk = _product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
             if x2 is None:
                 dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
             else:
                 dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
             return dk
-    return _product_kernel_raw_d(Polynomial, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+    return _product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 
+def grad_inverse_poly_matern_product(ls,x1,x2=None):
+    return _inverse_poly_matern_product_raw(ls, x1, x2, value=False, grad=True)
+
+def inverse_poly_matern_product(ls, x1, x2=None, grad=False):
+    '''
+    Product of polynomial kernel in the first dimension and Matern52 in the remaining dimensions.
+    '''
+    return _inverse_poly_matern_product_raw(ls, x1, x2, True, grad)
+
+def _inverse_poly_matern_sum_raw(ls, x1, x2=None, value=True, grad=False):
+    x11 = 1./ (x1[:,:1] + 1e-50) #get inverse first entry of each vector
+    x12 = x1[:,1:] #get the rest
+    x21 = None
+    x22 = None
+    if not(x2 is None):
+        x21 = 1. / (x2[:,:1] + 1e-50)
+        x22 = x2[:,1:]
+    ls1 = ls[:1]
+    ls2 = ls[1:]
+    if grad:
+        if value:
+            (k, dk) =_sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+            #this is chain rule and using 1/x^2 = (1/x)^2
+            if x2 is None:
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
+            else:
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
+            return (k, dk)
+        else:
+            dk = _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+            if x2 is None:
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
+            else:
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
+            return dk
+    return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
+
+def grad_inverse_poly_matern_sum(ls,x1,x2=None):
+    return _inverse_poly_matern_sum_raw(ls, x1, x2, value=False, grad=True)
+
+def inverse_poly_matern_sum(ls, x1, x2=None, grad=False):
+    '''
+    Sum of polynomial kernel in the first dimension and Matern52 in the remaining dimensions.
+    '''
+    return _inverse_poly_matern_sum_raw(ls, x1, x2, True, grad)
 
 class GPModel(object):
 
