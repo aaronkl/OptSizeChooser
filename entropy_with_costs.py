@@ -13,11 +13,12 @@ from spearmint.sobol_lib import i4_sobol_generate
 from spearmint.util import slice_sample
 #from .hyper_parameter_sampling import sample_from_proposal_measure
 
+euler = np.exp(1)
 
 class EntropyWithCosts():
 
     def __init__(self, gp, cost_gp, num_of_hal_vals=21, num_of_samples=500, num_of_rep_points=20, chain_length=20,
-                 transformation=8):
+                 transformation=7):
 
         self._gp = gp
         self._cost_gp = cost_gp
@@ -90,23 +91,23 @@ class EntropyWithCosts():
         Returns:
             a scalar
         '''
-        scale = np.max([1e1, scale])
+        scale = np.max([euler, scale])
         if self._transformation == 1:
 	    if kl_divergence < 0:
 		return kl_divergence * scale
             return kl_divergence / scale
         elif self._transformation == 2:
-            return np.exp(kl_divergence) / scale
+            return np.exp(kl_divergence+1) / scale
         elif self._transformation == 3:
 	    if kl_divergence < 0:
 		return kl_divergence * np.log(scale)
             return kl_divergence / np.log(scale)
         elif self._transformation == 4:
-            return np.exp(kl_divergence) / np.log(scale)
+            return np.exp(kl_divergence+1) / np.log(scale)
         elif self._transformation == 5:
             return (np.exp(kl_divergence) - np.exp(self._kl_divergence_old)) / np.log(scale)
         elif self._transformation == 6:
-            return np.exp(kl_divergence - self._kl_divergence_old) / np.log(scale)
+            return (np.exp(kl_divergence - self._kl_divergence_old) - 1) / np.log(scale)
         elif self._transformation == 7:
             return (kl_divergence - self._kl_divergence_old) / np.log(scale)
         elif self._transformation == 8:
@@ -115,6 +116,8 @@ class EntropyWithCosts():
             return (np.exp(kl_divergence) - np.exp(self._kl_divergence_old)) / scale
         elif self._transformation == 10:
             return np.exp(kl_divergence - self._kl_divergence_old) /scale
+	elif self._transformation == 11:
+	    return kl_divergence ** 2 / np.log(scale)
 
     def _sample_measure(self, x):
 

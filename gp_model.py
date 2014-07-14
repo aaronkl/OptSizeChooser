@@ -152,6 +152,10 @@ def grad_Linear(ls, x1, x2=None):
     dk = -dk
     return dk
 
+'''
+The multiplication constant for the inverse kernels. Improves numerical accuracy.
+'''
+COVAR_MULTIPLICATION_CONST = 1e3
 #TODO: kernel has sharp edge close to zero. Is there something we can do about it?
 def LogLinear(ls, x1, x2=None, grad=False):
     '''
@@ -159,23 +163,23 @@ def LogLinear(ls, x1, x2=None, grad=False):
     '''
     if x2 is not None:
         if grad:
-            (k, dk) = Linear(ls, np.log(x1+1e-15), np.log(x2+1e-15), grad)
-            dk = dk / x2
+            (k, dk) = Linear(ls, np.log(x1 * COVAR_MULTIPLICATION_CONST + 1e-15), np.log(x2 * COVAR_MULTIPLICATION_CONST + 1e-15), grad)
+            dk = dk / (COVAR_MULTIPLICATION_CONST * x2)
             return (k, dk)
         #else:
-        return Linear(ls, np.log(x1+1e-15), np.log(x2+1e-15), grad)
+        return Linear(ls, np.log(x1 * COVAR_MULTIPLICATION_CONST + 1e-15), np.log(x2 * COVAR_MULTIPLICATION_CONST + 1e-15), grad)
     #else:
     if grad:
-        (k, dk) = Linear(ls, np.log(x1+1e-15), None, grad)
-        dk = dk / x1
+        (k, dk) = Linear(ls, np.log(x1 * COVAR_MULTIPLICATION_CONST + 1e-15), None, grad)
+        dk = dk / (COVAR_MULTIPLICATION_CONST * x1)
         return (k, dk)
     #else:
-    return Linear(ls, np.log(x1+1e-15), None, grad)
+    return Linear(ls, np.log(x1 * COVAR_MULTIPLICATION_CONST + 1e-15), None, grad)
 
 def grad_LogLinear(ls, x1, x2=None):
     if x2 is not None:
-        return grad_Linear(ls, np.log(x1+1e-15), np.log(x2+1e-15)) / x2
-    return grad_Linear(ls, np.log(x1+1e-15), None) / x1
+        return grad_Linear(ls, np.log(x1 * COVAR_MULTIPLCATION_CONST + 1e-15), np.log(x2 * COVAR_MULTIPLICATION_CONST + 1e-15)) / (x2 * COVAR_MULTIPLICATION_CONST)
+    return grad_Linear(ls, np.log(x1 * COVAR_MULTIPLCATION_CONST + 1e-15), None) / (x1 * COVAR_MULTIPLICATION_CONST)
 
 def grad_Polynomial3(ls, x1, x2=None):
     return _polynomial3_raw(ls, x1, x2, value=False, grad=True)
@@ -458,13 +462,19 @@ def log_linear_matern_sum(ls, x1, x2=None, grad=False):
     '''
     return _log_linear_matern_sum_raw(ls, x1, x2, True, grad)
 
+
+'''
+Little epsilon that is added to covariance inputs for numeric stability.
+'''
+COVAR_OFFSET_CONST = 1.
+
 def _inverse_poly_matern_product_raw(ls, x1, x2=None, value=True, grad=False):
-    x11 = 1./ (x1[:,:1] + 1e-50) #get inverse first entry of each vector
+    x11 = 1./ (x1[:,:1] * COVAR_MULTIPLICATION_CONST + COVAR_OFFSET_CONST) #get inverse first entry of each vector
     x12 = x1[:,1:] #get the rest
     x21 = None
     x22 = None
     if not(x2 is None):
-        x21 = 1. / (x2[:,:1] + 1e-50)
+        x21 = 1. / (x2[:,:1] * COVAR_MULTIPLICATION_CONST + COVAR_OFFSET_CONST)
         x22 = x2[:,1:]
     ls1 = ls[:1]
     ls2 = ls[1:]
@@ -473,16 +483,16 @@ def _inverse_poly_matern_product_raw(ls, x1, x2=None, value=True, grad=False):
             (k, dk) =_product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
             #this is chain rule and using 1/x^2 = (1/x)^2
             if x2 is None:
-                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2) * COVAR_MULTIPLICATION_CONST
             else:
-                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2) * COVAR_MULTIPLICATION_CONST
             return (k, dk)
         else:
             dk = _product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
             if x2 is None:
-                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2) * COVAR_MULTIPLICATION_CONST
             else:
-                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2) * COVAR_MULTIPLICATION_CONST
             return dk
     return _product_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 
@@ -496,12 +506,12 @@ def inverse_poly_matern_product(ls, x1, x2=None, grad=False):
     return _inverse_poly_matern_product_raw(ls, x1, x2, True, grad)
 
 def _inverse_poly_matern_sum_raw(ls, x1, x2=None, value=True, grad=False):
-    x11 = 1./ (x1[:,:1] + 1e-50) #get inverse first entry of each vector
+    x11 = 1./ (x1[:,:1] * COVAR_MULTIPLICATION_CONST + COVAR_OFFSET_CONST) #get inverse first entry of each vector
     x12 = x1[:,1:] #get the rest
     x21 = None
     x22 = None
     if not(x2 is None):
-        x21 = 1. / (x2[:,:1] + 1e-50)
+        x21 = 1. / (x2[:,:1] * COVAR_MULTIPLICATION_CONST + COVAR_OFFSET_CONST)
         x22 = x2[:,1:]
     ls1 = ls[:1]
     ls2 = ls[1:]
@@ -510,16 +520,16 @@ def _inverse_poly_matern_sum_raw(ls, x1, x2=None, value=True, grad=False):
             (k, dk) =_sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
             #this is chain rule and using 1/x^2 = (1/x)^2
             if x2 is None:
-                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2) * COVAR_MULTIPLICATION_CONST
             else:
-                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2) * COVAR_MULTIPLICATION_CONST
             return (k, dk)
         else:
             dk = _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
             if x2 is None:
-                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2)
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x11 ** 2) * COVAR_MULTIPLICATION_CONST
             else:
-                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2)
+                dk[:, 0, :1] = dk[:, 0, :1] * -(x21 ** 2) * COVAR_MULTIPLICATION_CONST
             return dk
     return _sum_kernel_raw_d(Polynomial3, gp.Matern52, ls1, ls2, x11, x12, x21, x22, value, grad)
 

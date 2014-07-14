@@ -49,7 +49,7 @@ class EntropySearchChooser(object):
                  with_plotting=False,
                  with_costs=True,
                  path=None,
-                 transformation=1):
+                 transformation=7):
         '''
         Default constructor.
         Args:
